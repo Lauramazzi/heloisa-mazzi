@@ -1,29 +1,186 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#1a1a18">
-<title>Heloisa Mazzi — Gestão</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/tabler-icons.min.css">
+<meta name="theme-color" content="#0f0f0d">
+<title>Heloisa Mazzi</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="app">
-    <div id="loading-screen">
-      <div class="loading-logo">
-        <i class="ti ti-scissors"></i>
+
+<div id="app">
+
+  <!-- LOADING -->
+  <div id="loading-screen">
+    <div class="loading-logo"><i class="ti ti-scissors"></i></div>
+    <div class="loading-text">Heloisa Mazzi</div>
+    <div class="loading-sub">carregando...</div>
+  </div>
+
+  <!-- APP PRINCIPAL (oculto até carregar) -->
+  <div id="main" style="display:none">
+    <div class="app-wrap">
+
+      <!-- HEADER -->
+      <div class="app-header">
+        <div class="brand">
+          <div class="brand-av"><i class="ti ti-scissors"></i></div>
+          <div>
+            <div class="brand-name">Heloisa Mazzi</div>
+            <div class="brand-sub">Gestão financeira</div>
+          </div>
+        </div>
+        <span class="mes-tag">jun/2026</span>
       </div>
-      <div class="loading-text">Heloisa Mazzi</div>
-      <div class="loading-sub">carregando...</div>
+
+      <!-- SEÇÕES -->
+      <div id="sec-painel" class="sec active"></div>
+      <div id="sec-junho"  class="sec"></div>
+      <div id="sec-alertas" class="sec"></div>
+      <div id="sec-reserva" class="sec"></div>
+      <div id="sec-metas"  class="sec"></div>
+      <div id="sec-bebidas" class="sec"></div>
+
+      <!-- NAV -->
+      <nav class="bottom-nav">
+        <button class="nav-item active" data-tab="painel"  onclick="switchTab('painel',this)"><i class="ti ti-home"></i><span>Painel</span></button>
+        <button class="nav-item" data-tab="junho"   onclick="switchTab('junho',this)"><i class="ti ti-plus"></i><span>Junho</span></button>
+        <button class="nav-item" data-tab="alertas" onclick="switchTab('alertas',this)"><i class="ti ti-bell"></i><span>Alertas</span></button>
+        <button class="nav-item" data-tab="reserva" onclick="switchTab('reserva',this)"><i class="ti ti-piggy-bank"></i><span>Reserva</span></button>
+        <button class="nav-item" data-tab="metas"   onclick="switchTab('metas',this)"><i class="ti ti-target"></i><span>Metas</span></button>
+        <button class="nav-item" data-tab="bebidas" onclick="switchTab('bebidas',this)"><i class="ti ti-beer"></i><span>Bebidas</span></button>
+      </nav>
+
     </div>
   </div>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="app.js"></script>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <!-- MODAL LANÇAMENTO -->
+  <div class="modal-overlay" id="modal-lanc" onclick="closeIfBg(event,'modal-lanc')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Nova saída — Junho</div>
+        <button class="modal-close" onclick="closeModal('modal-lanc')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">O que foi pago?</label>
+        <input class="form-input" type="text" id="l-desc" placeholder="Ex: Marketing, produtos...">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Valor (R$)</label>
+          <input class="form-input" type="number" id="l-val" step="0.01" inputmode="decimal" placeholder="0,00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Data</label>
+          <input class="form-input" type="date" id="l-data">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Categoria</label>
+        <div class="cat-grid" id="cat-grid-lanc"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Pagamento</label>
+        <div class="toggle-row">
+          <button class="toggle-btn pag-btn active" onclick="selPag('Pix',this)">Pix</button>
+          <button class="toggle-btn pag-btn" onclick="selPag('Dinheiro',this)">Dinheiro</button>
+          <button class="toggle-btn pag-btn" onclick="selPag('Cartão',this)">Cartão</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Obs. (opcional)</label>
+        <input class="form-input" type="text" id="l-obs" placeholder="Fornecedor, nota...">
+      </div>
+      <button class="btn-primary" onclick="salvarLanc()"><i class="ti ti-check"></i> Registrar saída</button>
+    </div>
+  </div>
+
+  <!-- MODAL DEPÓSITO -->
+  <div class="modal-overlay" id="modal-dep" onclick="closeIfBg(event,'modal-dep')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Registrar depósito</div>
+        <button class="modal-close" onclick="closeModal('modal-dep')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Valor depositado (R$)</label>
+        <input class="form-input" type="number" id="d-val" step="0.01" inputmode="decimal" placeholder="0,00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data</label>
+        <input class="form-input" type="date" id="d-data">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Observação (opcional)</label>
+        <input class="form-input" type="text" id="d-obs" placeholder="Ex: guardado da semana">
+      </div>
+      <button class="btn-primary" onclick="salvarDeposito()"><i class="ti ti-piggy-bank"></i> Confirmar depósito</button>
+    </div>
+  </div>
+
+  <!-- MODAL BEBIDA -->
+  <div class="modal-overlay" id="modal-bev" onclick="closeIfBg(event,'modal-bev')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Registrar compra de bebida</div>
+        <button class="modal-close" onclick="closeModal('modal-bev')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fornecedor</label>
+        <input class="form-input" type="text" id="b-forn" placeholder="Ex: Helder">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Produto</label>
+        <input class="form-input" type="text" id="b-prod" placeholder="Ex: Cerveja Heineken 250ml">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Quantidade</label>
+          <input class="form-input" type="number" id="b-qtd" placeholder="0" min="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Valor total (R$)</label>
+          <input class="form-input" type="number" id="b-val" step="0.01" placeholder="0,00">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data</label>
+        <input class="form-input" type="date" id="b-data">
+      </div>
+      <button class="btn-primary" onclick="salvarBebida()"><i class="ti ti-check"></i> Registrar compra</button>
+    </div>
+  </div>
+
+  <!-- MODAL METAS -->
+  <div class="modal-overlay" id="modal-meta" onclick="closeIfBg(event,'modal-meta')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Editar metas</div>
+        <button class="modal-close" onclick="closeModal('modal-meta')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="form-group"><label class="form-label">Faturamento mínimo (R$)</label><input class="form-input" type="number" id="m-fat" step="100"></div>
+      <div class="form-group"><label class="form-label">Limite despesas barbearia (R$)</label><input class="form-input" type="number" id="m-desp" step="100"></div>
+      <div class="form-group"><label class="form-label">Meta atendimentos/mês</label><input class="form-input" type="number" id="m-atend"></div>
+      <div class="form-group"><label class="form-label">Ticket médio mínimo (R$)</label><input class="form-input" type="number" id="m-ticket" step="0.5"></div>
+      <div class="form-group"><label class="form-label">Depósito reserva/mês (R$)</label><input class="form-input" type="number" id="m-reserva" step="100"></div>
+      <div class="form-group"><label class="form-label">Meta produtos (% faturamento)</label><input class="form-input" type="number" id="m-prod" step="0.5"></div>
+      <button class="btn-primary" onclick="salvarMetas()"><i class="ti ti-check"></i> Salvar metas</button>
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
