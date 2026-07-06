@@ -20,15 +20,15 @@ const HIST = [
   { m:'2026-03', label:'Mar', fat:9050.00,  atend:194, ticket:46.65 },
   { m:'2026-04', label:'Abr', fat:9060.50,  atend:198, ticket:45.76 },
   { m:'2026-05', label:'Mai', fat:11309.50, atend:242, ticket:46.73 },
+  { m:'2026-06', label:'Jun', fat:10638.00, atend:234, ticket:45.46 },
 ];
 
 const VENCIMENTOS = [
   { nome:'App Barber',       valor:109.90, dia:2,  tipo:'Fixo' },
-  { nome:'Ar condicionado',  valor:213.00, dia:3,  tipo:'Parcela 2/10' },
+  { nome:'Ar condicionado',  valor:213.00, dia:3,  tipo:'Parcela 3/10' },
   { nome:'Laura',            valor:320.00, dia:10, tipo:'Fixo' },
-  { nome:'Mesinha',          valor:63.93,  dia:16, tipo:'Parcela 4/4', encerra:true },
-  { nome:'MEI',              valor:390.00, dia:25, tipo:'Parcela 9/9', encerra:true },
-  { nome:'Papo de Barbeira', valor:99.00,  dia:30, tipo:'Parcela 2/3' },
+  { nome:'MEI',              valor:390.00, dia:25, tipo:'Fixo (recorrente)' },
+  { nome:'Papo de Barbeira', valor:99.00,  dia:30, tipo:'Parcela 3/3', encerra:true },
 ];
 
 const CATS = [
@@ -119,25 +119,32 @@ function switchTab(id, btn) {
 }
 
 function renderPainel() {
-  var lancJun = lancamentos.filter(function(l){ return l.data && l.data.indexOf('2026-06')===0; });
-  var totalJun = lancJun.reduce(function(s,l){ return s+l.valor; }, 0);
+  var lancJul = lancamentos.filter(function(l){ return l.data && l.data.indexOf('2026-07')===0; });
+  var totalJul = lancJul.reduce(function(s,l){ return s+l.valor; }, 0);
   var pctRes = Math.round((reserva.valor / reserva.metaTotal) * 100);
+  var junHist = HIST[5]; // junho
+  var maiHist = HIST[4]; // maio (recorde)
 
+  var maxFat = Math.max.apply(null, HIST.map(function(h){ return h.fat; }));
   var barras = HIST.map(function(h,i){
-    var pct = Math.round((h.fat/11309.50)*100);
-    var ativo = i===4;
+    var pct = Math.round((h.fat/maxFat)*100);
+    var ativo = i === HIST.length - 1; // último mês (junho)
     return '<div class="bar-col"><div class="bar-fill" style="height:'+pct+'%;background:'+(ativo?'var(--gold)':'var(--bg3)')+';border:0.5px solid '+(ativo?'var(--gold)':'var(--border2)')+'"></div><div class="bar-label">'+h.label+'</div></div>';
   }).join('');
 
+  var diffAtend = junHist.atend - maiHist.atend; // -8
+  var diffAtendTxt = (diffAtend >= 0 ? '+' : '') + diffAtend + ' vs. maio';
+  var diffAtendCor = diffAtend >= 0 ? 'var(--green)' : 'var(--red)';
+
   document.getElementById('sec-painel').innerHTML =
     '<div class="metrics">' +
-      '<div class="mcard"><div class="mcard-label">Faturamento mai</div><div class="mcard-val val-green">'+brl(11309.50)+'</div><div class="mcard-sub">↑ recorde histórico</div></div>' +
-      '<div class="mcard"><div class="mcard-label">Atendimentos mai</div><div class="mcard-val">242</div><div class="mcard-sub" style="color:var(--green)">+27 vs. abril</div></div>' +
-      '<div class="mcard"><div class="mcard-label">Resultado líquido</div><div class="mcard-val val-green">'+brl(1060.73)+'</div><div class="mcard-sub">mai/2026</div></div>' +
-      '<div class="mcard"><div class="mcard-label">Saídas junho</div><div class="mcard-val '+(totalJun>0?'val-red':'')+'">'+(totalJun>0?brl(totalJun):'—')+'</div><div class="mcard-sub">'+lancJun.length+' lançamentos</div></div>' +
+      '<div class="mcard"><div class="mcard-label">Faturamento jun</div><div class="mcard-val val-green">'+brl(junHist.fat)+'</div><div class="mcard-sub">2º melhor do ano</div></div>' +
+      '<div class="mcard"><div class="mcard-label">Atendimentos jun</div><div class="mcard-val">'+junHist.atend+'</div><div class="mcard-sub" style="color:'+diffAtendCor+'">'+diffAtendTxt+'</div></div>' +
+      '<div class="mcard"><div class="mcard-label">Ticket médio jun</div><div class="mcard-val">'+brl(junHist.ticket)+'</div><div class="mcard-sub">jun/2026</div></div>' +
+      '<div class="mcard"><div class="mcard-label">Saídas julho</div><div class="mcard-val '+(totalJul>0?'val-red':'')+'">'+( totalJul>0?brl(totalJul):'—')+'</div><div class="mcard-sub">'+lancJul.length+' lançamentos</div></div>' +
     '</div>' +
-    '<div class="card"><div class="card-title">Faturamento jan–mai/2026</div><div class="bar-chart">'+barras+'</div>' +
-    '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-top:6px"><span>R$ 7.224 em jan</span><span style="color:var(--gold)">R$ 11.309 em mai ★</span></div></div>' +
+    '<div class="card"><div class="card-title">Faturamento jan–jun/2026</div><div class="bar-chart">'+barras+'</div>' +
+    '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-top:6px"><span>R$ 7.224 em jan</span><span style="color:var(--gold)">R$ 11.309 em mai ★ recorde</span></div></div>' +
     '<div class="card"><div class="card-title">Reserva financeira</div>' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px">' +
         '<div><div style="font-size:11px;color:var(--text2);margin-bottom:2px">Cofrinho Mercado Pago</div><div style="font-size:26px;font-weight:600;color:var(--green);font-family:var(--mono)">'+brl(reserva.valor)+'</div></div>' +
@@ -147,35 +154,35 @@ function renderPainel() {
       '<div class="prog-wrap" style="height:7px"><div class="prog-bar" style="width:'+pctRes+'%;background:var(--green)"></div></div>' +
     '</div>' +
     '<div class="card"><div class="card-title">Insights</div>' +
-      '<div class="insight-item"><i class="ti ti-trending-up" style="color:var(--green)"></i><span><strong>+57% jan→mai.</strong> 5 meses consecutivos de crescimento. Maio foi recorde.</span></div>' +
-      '<div class="insight-item"><i class="ti ti-confetti" style="color:var(--gold)"></i><span><strong>MEI e Mesinha encerram em junho!</strong> R$ 453/mês livres a partir de julho.</span></div>' +
-      '<div class="insight-item"><i class="ti ti-scissors" style="color:var(--amber)"></i><span><strong>Barboterapia em alta:</strong> 14→21 atendimentos. Serviço premium com potencial.</span></div>' +
-      '<div class="insight-item"><i class="ti ti-package" style="color:var(--amber)"></i><span><strong>Produtos = 5,5%</strong> do faturamento. Meta: 10%.</span></div>' +
+      '<div class="insight-item"><i class="ti ti-trending-up" style="color:var(--green)"></i><span><strong>+47% jan→jun.</strong> 6 meses de histórico. Faturamento 2º melhor do ano.</span></div>' +
+      '<div class="insight-item"><i class="ti ti-confetti" style="color:var(--gold)"></i><span><strong>MEI e Mesinha encerraram!</strong> R$ 453,93/mês livres a partir de julho.</span></div>' +
+      '<div class="insight-item"><i class="ti ti-scissors" style="color:var(--amber)"></i><span><strong>Corte de Cabelo:</strong> 121 em junho (52% dos atend.). Principal motor de receita.</span></div>' +
+      '<div class="insight-item"><i class="ti ti-package" style="color:var(--amber)"></i><span><strong>Papo de Barbeira encerra em julho!</strong> Última parcela (R$99) — R$ 552/mês liberados.</span></div>' +
     '</div>';
 }
 
 function renderJunho() {
-  var junLancs = lancamentos.filter(function(l){ return l.data && l.data.indexOf('2026-06')===0; }).sort(function(a,b){ return b.data.localeCompare(a.data); });
-  var total = junLancs.reduce(function(s,l){ return s+l.valor; },0);
-  var barb  = junLancs.filter(function(l){ return l.conta==='Barbearia'; }).reduce(function(s,l){ return s+l.valor; },0);
-  var pes   = junLancs.filter(function(l){ return l.conta==='Pessoal'; }).reduce(function(s,l){ return s+l.valor; },0);
+  var julLancs = lancamentos.filter(function(l){ return l.data && l.data.indexOf('2026-07')===0; }).sort(function(a,b){ return b.data.localeCompare(a.data); });
+  var total = julLancs.reduce(function(s,l){ return s+l.valor; },0);
+  var barb  = julLancs.filter(function(l){ return l.conta==='Barbearia'; }).reduce(function(s,l){ return s+l.valor; },0);
+  var pes   = julLancs.filter(function(l){ return l.conta==='Pessoal'; }).reduce(function(s,l){ return s+l.valor; },0);
 
-  var lista = junLancs.length
-    ? junLancs.map(function(l){
+  var lista = julLancs.length
+    ? julLancs.map(function(l){
         var cat = CATS.filter(function(c){ return c.nome===l.categoria; })[0] || CATS[0];
         return '<div class="list-item">' +
           '<div class="list-icon" style="background:'+cat.bg+'"><i class="ti '+cat.icon+'" style="color:'+cat.cor+'"></i></div>' +
-          '<div class="list-info"><div class="list-name">'+l.desc+'</div><div class="list-meta">'+dataFmt(l.data)+' · '+l.categoria+(l.pagamento?' · '+l.pagamento:'')+(l.obs?' · '+l.obs:'')+'</div></div>' +
+          '<div class="list-info"><div class="list-name">'+l.desc+'</div><div class="list-meta">'+dataFmt(l.data)+' · '+l.categoria+(l.pagamento?' · '+l.pagamento:'')+(l.obs?' · '+l.obs:'')+' </div></div>' +
           '<div class="list-val" style="color:var(--red)">'+brl(l.valor)+'</div>' +
-          '<button class="del-btn" onclick="delLanc(\''+l.id+'\')"><i class="ti ti-trash"></i></button>' +
+          '<button class="del-btn" onclick="delLanc(\''+l.id+'\')" ><i class="ti ti-trash"></i></button>' +
         '</div>';
       }).join('')
     : '<div class="empty"><i class="ti ti-inbox"></i><br>Nenhuma saída lançada ainda.</div>';
 
   document.getElementById('sec-junho').innerHTML =
-    '<div class="sec-header"><div class="sec-title">Junho / 2026</div><button class="btn-add" onclick="openModal(\'modal-lanc\')"><i class="ti ti-plus"></i> Nova saída</button></div>' +
+    '<div class="sec-header"><div class="sec-title">Julho / 2026</div><button class="btn-add" onclick="openModal(\'modal-lanc\')"><i class="ti ti-plus"></i> Nova saída</button></div>' +
     '<div class="metrics">' +
-      '<div class="mcard"><div class="mcard-label">Total saídas</div><div class="mcard-val val-red">'+brl(total)+'</div><div class="mcard-sub">'+junLancs.length+' lançamentos</div></div>' +
+      '<div class="mcard"><div class="mcard-label">Total saídas</div><div class="mcard-val val-red">'+brl(total)+'</div><div class="mcard-sub">'+julLancs.length+' lançamentos</div></div>' +
       '<div class="mcard"><div class="mcard-label">Barbearia</div><div class="mcard-val val-amber">'+brl(barb)+'</div><div class="mcard-sub">Pessoal: '+brl(pes)+'</div></div>' +
     '</div>' +
     '<div class="card"><div class="card-title">Lançamentos</div>'+lista+'</div>';
@@ -220,7 +227,7 @@ async function delLanc(id) {
 function renderAlertas() {
   var agora = new Date();
   var vencComDiff = VENCIMENTOS.map(function(v){
-    var vd = new Date(2026,5,v.dia);
+    var vd = new Date(2026,6,v.dia); // mês 6 = julho (0-indexed)
     var diff = Math.round((vd-agora)/86400000);
     return Object.assign({},v,{diff:diff});
   }).sort(function(a,b){ return a.diff-b.diff; });
@@ -233,28 +240,28 @@ function renderAlertas() {
     html += '<div class="card"><div class="card-title" style="color:var(--red)">⚠ Atenção imediata</div>';
     urgentes.forEach(function(v){
       var label = v.diff===0?'Vence hoje!':v.diff===1?'Amanhã':'Em '+v.diff+' dias';
-      html += '<div class="alert alert-red"><i class="ti ti-bell"></i><div><div class="alert-title">'+v.nome+(v.encerra?' <span class="pill pill-green">último mês</span>':'')+'</div><div class="alert-sub">'+label+' · '+v.tipo+' · '+brl(v.valor)+'</div></div></div>';
+      html += '<div class="alert alert-red"><i class="ti ti-bell"></i><div><div class="alert-title">'+v.nome+(v.encerra?' <span class="pill pill-green">último mês</span>':'')+' </div><div class="alert-sub">'+label+' · '+v.tipo+' · '+brl(v.valor)+'</div></div></div>';
     });
     html += '</div>';
   }
   if (proximos.length) {
     html += '<div class="card"><div class="card-title">Próximos 10 dias</div>';
     proximos.forEach(function(v){
-      html += '<div class="alert alert-amber"><i class="ti ti-clock"></i><div><div class="alert-title">'+v.nome+(v.encerra?' <span class="pill pill-green">último mês</span>':'')+'</div><div class="alert-sub">Em '+v.diff+' dias · dia '+v.dia+' · '+brl(v.valor)+'</div></div></div>';
+      html += '<div class="alert alert-amber"><i class="ti ti-clock"></i><div><div class="alert-title">'+v.nome+(v.encerra?' <span class="pill pill-green">último mês</span>':'')+' </div><div class="alert-sub">Em '+v.diff+' dias · dia '+v.dia+' · '+brl(v.valor)+'</div></div></div>';
     });
     html += '</div>';
   }
-  html += '<div class="card"><div class="card-title">Calendário de junho</div>';
+  html += '<div class="card"><div class="card-title">Calendário de julho</div>';
   vencComDiff.forEach(function(v){
     var passado = v.diff<0;
     var corDot = passado?'var(--text3)':v.diff<=3?'var(--red)':v.diff<=10?'var(--amber)':'var(--green)';
-    html += '<div class="row" style="'+(passado?'opacity:0.4':'')+'">' +
+    html += '<div class="row" style="'+(passado?'opacity:0.4':'')+'">'+
       '<div class="dot" style="background:'+corDot+';width:8px;height:8px;flex-shrink:0"></div>' +
       '<div class="row-label"><div>'+v.nome+(v.encerra?' ★':'')+'</div><div class="row-sub">dia '+v.dia+' · '+v.tipo+'</div></div>' +
       '<div class="row-val">'+brl(v.valor)+'</div></div>';
   });
   html += '</div>';
-  html += '<div class="alert alert-green"><i class="ti ti-confetti"></i><div><div class="alert-title">MEI e Mesinha encerram em junho!</div><div class="alert-sub">R$ 453,93/mês liberados a partir de julho.</div></div></div>';
+  html += '<div class="alert alert-green"><i class="ti ti-confetti"></i><div><div class="alert-title">Papo de Barbeira encerra em julho!</div><div class="alert-sub">Última parcela R$99. A partir de agosto: R$ 552,93/mês liberados no caixa.</div></div></div>';
   document.getElementById('sec-alertas').innerHTML = html;
 }
 
@@ -324,12 +331,12 @@ async function delDeposito(id) {
 }
 
 function renderMetas() {
-  var mai = HIST[4];
+  var jun = HIST[5]; // junho/2026
   var items = [
-    { l:'Faturamento mínimo',    meta:metas.fat,     real:mai.fat,     fmt:function(v){ return 'R$'+Math.round(v).toLocaleString('pt-BR'); } },
-    { l:'Limite de despesas',    meta:metas.desp,    real:8248.77,     fmt:function(v){ return 'R$'+Math.round(v).toLocaleString('pt-BR'); }, inv:true },
-    { l:'Atendimentos/mês',      meta:metas.atend,   real:mai.atend,   fmt:function(v){ return v+' atend.'; } },
-    { l:'Ticket médio mínimo',   meta:metas.ticket,  real:mai.ticket,  fmt:function(v){ return 'R$'+Number(v).toFixed(2); } },
+    { l:'Faturamento mínimo',    meta:metas.fat,     real:jun.fat,     fmt:function(v){ return 'R$'+Math.round(v).toLocaleString('pt-BR'); } },
+    { l:'Limite de despesas',    meta:metas.desp,    real:3858.28,     fmt:function(v){ return 'R$'+Math.round(v).toLocaleString('pt-BR'); }, inv:true },
+    { l:'Atendimentos/mês',      meta:metas.atend,   real:jun.atend,   fmt:function(v){ return v+' atend.'; } },
+    { l:'Ticket médio mínimo',   meta:metas.ticket,  real:jun.ticket,  fmt:function(v){ return 'R$'+Number(v).toFixed(2); } },
     { l:'Depósito reserva/mês',  meta:metas.reserva, real:400,         fmt:function(v){ return 'R$'+Math.round(v).toLocaleString('pt-BR'); } },
     { l:'Participação produtos',  meta:metas.prod,    real:5.5,         fmt:function(v){ return v+'%'; } },
   ];
@@ -351,7 +358,7 @@ function renderMetas() {
 
   document.getElementById('sec-metas').innerHTML =
     '<div class="sec-header"><div class="sec-title">Metas</div><button class="btn-add" onclick="openModal(\'modal-meta\')"><i class="ti ti-edit"></i> Editar</button></div>' +
-    '<div class="card"><div class="card-title">Metas vs. maio/2026</div>'+itensHtml+'</div>';
+    '<div class="card"><div class="card-title">Metas vs. junho/2026</div>'+itensHtml+'</div>';
 }
 
 async function salvarMetas() {
