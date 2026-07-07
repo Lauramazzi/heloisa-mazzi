@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -6,8 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0f0f0d">
-<title>Heloisa Mazzi</title>
+<meta name="description" content="Gestão financeira da barbearia Heloísa Mazzi">
+<title>Heloísa Mazzi</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
@@ -19,7 +22,7 @@
   <!-- LOADING -->
   <div id="loading-screen">
     <div class="loading-logo"><i class="ti ti-scissors"></i></div>
-    <div class="loading-text">Heloisa Mazzi</div>
+    <div class="loading-text">Heloísa Mazzi</div>
     <div class="loading-sub">carregando...</div>
   </div>
 
@@ -32,29 +35,29 @@
         <div class="brand">
           <div class="brand-av"><i class="ti ti-scissors"></i></div>
           <div>
-            <div class="brand-name">Heloisa Mazzi</div>
+            <div class="brand-name">Heloísa Mazzi</div>
             <div class="brand-sub">Gestão financeira</div>
           </div>
         </div>
-        <span class="mes-tag">jul/2026</span>
+        <span class="mes-tag" id="mes-tag">jul/2026</span>
       </div>
 
       <!-- SEÇÕES -->
-      <div id="sec-painel" class="sec active"></div>
-      <div id="sec-junho"  class="sec"></div>
+      <div id="sec-painel"  class="sec active"></div>
+      <div id="sec-junho"   class="sec"></div>
       <div id="sec-alertas" class="sec"></div>
       <div id="sec-reserva" class="sec"></div>
-      <div id="sec-metas"  class="sec"></div>
+      <div id="sec-metas"   class="sec"></div>
       <div id="sec-bebidas" class="sec"></div>
 
       <!-- NAV -->
       <nav class="bottom-nav">
         <button class="nav-item active" data-tab="painel"  onclick="switchTab('painel',this)"><i class="ti ti-home"></i><span>Painel</span></button>
-        <button class="nav-item" data-tab="junho"   onclick="switchTab('junho',this)"><i class="ti ti-plus"></i><span>Julho</span></button>
-        <button class="nav-item" data-tab="alertas" onclick="switchTab('alertas',this)"><i class="ti ti-bell"></i><span>Alertas</span></button>
-        <button class="nav-item" data-tab="reserva" onclick="switchTab('reserva',this)"><i class="ti ti-piggy-bank"></i><span>Reserva</span></button>
-        <button class="nav-item" data-tab="metas"   onclick="switchTab('metas',this)"><i class="ti ti-target"></i><span>Metas</span></button>
-        <button class="nav-item" data-tab="bebidas" onclick="switchTab('bebidas',this)"><i class="ti ti-beer"></i><span>Bebidas</span></button>
+        <button class="nav-item"        data-tab="junho"   onclick="switchTab('junho',this)"><i class="ti ti-plus"></i><span>Saídas</span></button>
+        <button class="nav-item"        data-tab="alertas" onclick="switchTab('alertas',this)"><i class="ti ti-bell"></i><span>Alertas</span></button>
+        <button class="nav-item"        data-tab="reserva" onclick="switchTab('reserva',this)"><i class="ti ti-piggy-bank"></i><span>Reserva</span></button>
+        <button class="nav-item"        data-tab="metas"   onclick="switchTab('metas',this)"><i class="ti ti-target"></i><span>Metas</span></button>
+        <button class="nav-item"        data-tab="bebidas" onclick="switchTab('bebidas',this)"><i class="ti ti-beer"></i><span>Bebidas</span></button>
       </nav>
 
     </div>
@@ -63,11 +66,13 @@
   <!-- TOAST -->
   <div class="toast" id="toast"></div>
 
-  <!-- MODAL LANÇAMENTO -->
+  <!-- ======================================================
+       MODAL: NOVA SAÍDA
+  ====================================================== -->
   <div class="modal-overlay" id="modal-lanc" onclick="closeIfBg(event,'modal-lanc')">
     <div class="modal-box">
       <div class="modal-header">
-        <div class="modal-title">Nova saída — Julho</div>
+        <div class="modal-title">Nova saída</div>
         <button class="modal-close" onclick="closeModal('modal-lanc')"><i class="ti ti-x"></i></button>
       </div>
       <div class="form-group">
@@ -104,7 +109,85 @@
     </div>
   </div>
 
-  <!-- MODAL DEPÓSITO -->
+  <!-- ======================================================
+       MODAL: FECHAR MÊS
+  ====================================================== -->
+  <div class="modal-overlay" id="modal-fechamento" onclick="closeIfBg(event,'modal-fechamento')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Fechar mês</div>
+        <button class="modal-close" onclick="closeModal('modal-fechamento')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="fechamento-mes-badge">
+        <i class="ti ti-calendar-check" style="color:var(--gold);font-size:20px"></i>
+        <span id="f-mes-label" style="font-size:16px;font-weight:600;color:var(--gold)">—</span>
+      </div>
+      <input type="hidden" id="f-mes">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Faturamento bruto (R$)</label>
+          <input class="form-input" type="number" id="f-fat" step="0.01" inputmode="decimal" placeholder="0,00" oninput="calcTicketPreview()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Total de atendimentos</label>
+          <input class="form-input" type="number" id="f-atend" inputmode="numeric" placeholder="0" oninput="calcTicketPreview()">
+        </div>
+      </div>
+      <div class="ticket-preview">
+        <span style="font-size:12px;color:var(--text2)">Ticket médio calculado:</span>
+        <span id="f-ticket-preview" style="font-size:18px;font-weight:600;color:var(--green);font-family:var(--mono)">—</span>
+      </div>
+      <button class="btn-primary" onclick="salvarFechamento()"><i class="ti ti-calendar-check"></i> Fechar e salvar</button>
+    </div>
+  </div>
+
+  <!-- ======================================================
+       MODAL: NOVO/EDITAR VENCIMENTO
+  ====================================================== -->
+  <div class="modal-overlay" id="modal-vencimento" onclick="closeIfBg(event,'modal-vencimento')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="v-titulo">Novo vencimento</div>
+        <button class="modal-close" onclick="closeModal('modal-vencimento')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nome do vencimento</label>
+        <input class="form-input" type="text" id="v-nome" placeholder="Ex: App Barber, Aluguel...">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Valor (R$)</label>
+          <input class="form-input" type="number" id="v-valor" step="0.01" inputmode="decimal" placeholder="0,00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Dia do mês</label>
+          <input class="form-input" type="number" id="v-dia" min="1" max="31" inputmode="numeric" placeholder="1–31">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tipo</label>
+        <input class="form-input" type="text" id="v-tipo" placeholder="Ex: Fixo, Parcela 2/12...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Avisar quantos dias antes</label>
+        <div class="toggle-row">
+          <button class="toggle-btn aviso-btn" onclick="selAviso(1,this)">1 dia</button>
+          <button class="toggle-btn aviso-btn active" onclick="selAviso(3,this)">3 dias</button>
+          <button class="toggle-btn aviso-btn" onclick="selAviso(7,this)">7 dias</button>
+        </div>
+        <input type="hidden" id="v-aviso" value="3">
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="v-encerra" style="width:18px;height:18px;accent-color:var(--gold)">
+        <label for="v-encerra" class="form-label" style="margin:0">Este é o último mês desta conta</label>
+      </div>
+      <button class="btn-primary" onclick="salvarVencimento()"><i class="ti ti-check"></i> Salvar vencimento</button>
+    </div>
+  </div>
+
+  <!-- ======================================================
+       MODAL: DEPÓSITO
+  ====================================================== -->
   <div class="modal-overlay" id="modal-dep" onclick="closeIfBg(event,'modal-dep')">
     <div class="modal-box">
       <div class="modal-header">
@@ -127,7 +210,9 @@
     </div>
   </div>
 
-  <!-- MODAL BEBIDA -->
+  <!-- ======================================================
+       MODAL: BEBIDA
+  ====================================================== -->
   <div class="modal-overlay" id="modal-bev" onclick="closeIfBg(event,'modal-bev')">
     <div class="modal-box">
       <div class="modal-header">
@@ -160,7 +245,9 @@
     </div>
   </div>
 
-  <!-- MODAL METAS -->
+  <!-- ======================================================
+       MODAL: METAS
+  ====================================================== -->
   <div class="modal-overlay" id="modal-meta" onclick="closeIfBg(event,'modal-meta')">
     <div class="modal-box">
       <div class="modal-header">
@@ -178,6 +265,15 @@
   </div>
 
 </div><!-- #app -->
+
+<script>
+// Seletor de aviso para vencimentos
+function selAviso(v, btn) {
+  document.getElementById('v-aviso').value = v;
+  document.querySelectorAll('.aviso-btn').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+</script>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
