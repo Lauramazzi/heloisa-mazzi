@@ -171,9 +171,9 @@
       <div class="form-group">
         <label class="form-label">Avisar quantos dias antes</label>
         <div class="toggle-row">
-          <button class="toggle-btn aviso-btn" onclick="selAviso(1,this)">1 dia</button>
-          <button class="toggle-btn aviso-btn active" onclick="selAviso(3,this)">3 dias</button>
-          <button class="toggle-btn aviso-btn" onclick="selAviso(7,this)">7 dias</button>
+          <button class="toggle-btn aviso-btn active" data-aviso="1" onclick="selAviso(1,this)">1 dia</button>
+          <button class="toggle-btn aviso-btn" data-aviso="3" onclick="selAviso(3,this)">3 dias</button>
+          <button class="toggle-btn aviso-btn" data-aviso="7" onclick="selAviso(7,this)">7 dias</button>
         </div>
         <input type="hidden" id="v-aviso" value="3">
       </div>
@@ -246,34 +246,85 @@
   </div>
 
   <!-- ======================================================
-       MODAL: METAS
+       MODAL: EDITAR DEPÓSITO
   ====================================================== -->
-  <div class="modal-overlay" id="modal-meta" onclick="closeIfBg(event,'modal-meta')">
+  <div class="modal-overlay" id="modal-dep-edit" onclick="closeIfBg(event,'modal-dep-edit')">
     <div class="modal-box">
       <div class="modal-header">
-        <div class="modal-title">Editar metas</div>
-        <button class="modal-close" onclick="closeModal('modal-meta')"><i class="ti ti-x"></i></button>
+        <div class="modal-title">Editar depósito</div>
+        <button class="modal-close" onclick="closeModal('modal-dep-edit')"><i class="ti ti-x"></i></button>
       </div>
-      <div class="form-group"><label class="form-label">Faturamento mínimo (R$)</label><input class="form-input" type="number" id="m-fat" step="100"></div>
-      <div class="form-group"><label class="form-label">Limite despesas barbearia (R$)</label><input class="form-input" type="number" id="m-desp" step="100"></div>
-      <div class="form-group"><label class="form-label">Meta atendimentos/mês</label><input class="form-input" type="number" id="m-atend"></div>
-      <div class="form-group"><label class="form-label">Ticket médio mínimo (R$)</label><input class="form-input" type="number" id="m-ticket" step="0.5"></div>
-      <div class="form-group"><label class="form-label">Depósito reserva/mês (R$)</label><input class="form-input" type="number" id="m-reserva" step="100"></div>
-      <div class="form-group"><label class="form-label">Meta produtos (% faturamento)</label><input class="form-input" type="number" id="m-prod" step="0.5"></div>
-      <button class="btn-primary" onclick="salvarMetas()"><i class="ti ti-check"></i> Salvar metas</button>
+      <div class="form-group">
+        <label class="form-label">Valor (R$)</label>
+        <input class="form-input" type="number" id="de-val" step="0.01" inputmode="decimal" placeholder="0,00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data</label>
+        <input class="form-input" type="date" id="de-data">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Observação</label>
+        <input class="form-input" type="text" id="de-obs" placeholder="Ex: guardado da semana">
+      </div>
+      <button class="btn-primary" onclick="salvarEdicaoDeposito()"><i class="ti ti-check"></i> Salvar alterações</button>
+    </div>
+  </div>
+
+  <!-- ======================================================
+       MODAL: NOVA / EDITAR META
+  ====================================================== -->
+  <div class="modal-overlay" id="modal-meta-item" onclick="closeIfBg(event,'modal-meta-item')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="mi-titulo">Nova meta</div>
+        <button class="modal-close" onclick="closeModal('modal-meta-item')"><i class="ti ti-x"></i></button>
+      </div>
+      <div id="mi-real-info" style="font-size:11px;color:var(--gold);background:rgba(250,199,117,0.07);border:0.5px solid rgba(250,199,117,0.2);border-radius:8px;padding:8px 12px;margin-bottom:12px">Valor realizado calculado automaticamente do último fechamento.</div>
+      <div class="form-group">
+        <label class="form-label">Nome da meta</label>
+        <input class="form-input" type="text" id="mi-label" placeholder="Ex: Faturamento mínimo">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Valor alvo</label>
+          <input class="form-input" type="number" id="mi-target" step="0.01" inputmode="decimal" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Valor realizado</label>
+          <input class="form-input" type="number" id="mi-real" step="0.01" inputmode="decimal" placeholder="Deixar vazio = auto">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tipo de meta</label>
+        <div class="toggle-row">
+          <button class="toggle-btn tipo-btn active" data-tipo="min" onclick="selMetaTipo('min',this)">↑ Atingir mínimo</button>
+          <button class="toggle-btn tipo-btn" data-tipo="max" onclick="selMetaTipo('max',this)">↓ Não ultrapassar</button>
+        </div>
+        <input type="hidden" id="mi-tipo" value="min">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Formato de exibição</label>
+        <div class="toggle-row">
+          <button class="toggle-btn fmt-btn active" data-fmt="brl" onclick="selMetaFmt('brl',this)">R$ Valor</button>
+          <button class="toggle-btn fmt-btn" data-fmt="num" onclick="selMetaFmt('num',this)">123 Número</button>
+          <button class="toggle-btn fmt-btn" data-fmt="pct" onclick="selMetaFmt('pct',this)">% Percent.</button>
+        </div>
+        <input type="hidden" id="mi-fmt" value="brl">
+      </div>
+      <button class="btn-primary" onclick="salvarMetaItem()"><i class="ti ti-check"></i> Salvar meta</button>
     </div>
   </div>
 
 </div><!-- #app -->
 
-<script>
-// Seletor de aviso para vencimentos
-function selAviso(v, btn) {
-  document.getElementById('v-aviso').value = v;
-  document.querySelectorAll('.aviso-btn').forEach(function(b){ b.classList.remove('active'); });
-  btn.classList.add('active');
-}
-</script>
+  <!-- aviso buttons -->
+  <script>
+  function selAviso(v, btn) {
+    document.getElementById('v-aviso').value = v;
+    document.querySelectorAll('.aviso-btn').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+  }
+  </script>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
