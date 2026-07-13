@@ -579,15 +579,25 @@ function renderReserva() {
   var hist   = (reserva.historico||[]).slice().sort(function(a,b){ return b.data.localeCompare(a.data); });
 
   var histHtml = hist.length ? hist.map(function(d){
+    var ehSaida = d.tipo === 'saida';
+    var cor     = ehSaida ? 'var(--red)' : 'var(--green)';
+    var icone   = ehSaida ? 'ti-arrow-up-circle' : 'ti-arrow-down-circle';
+    var bgIco   = ehSaida ? 'rgba(224,85,85,0.15)' : 'rgba(76,175,125,0.15)';
+    var sinal   = ehSaida ? '−' : '+';
+    var label   = d.obs || (ehSaida ? 'Retirada' : 'Depósito');
     return '<div class="list-item">' +
-      '<div class="list-icon" style="background:rgba(76,175,125,0.15)"><i class="ti ti-piggy-bank" style="color:var(--green)"></i></div>' +
-      '<div class="list-info"><div class="list-name">' + (d.obs||'Depósito') + '</div><div class="list-meta">' + dataFmt(d.data) + ' · ' + brl(d.valor) + '</div></div>' +
+      '<div class="list-icon" style="background:' + bgIco + '"><i class="ti ' + icone + '" style="color:' + cor + '"></i></div>' +
+      '<div class="list-info">' +
+        '<div class="list-name">' + label + '</div>' +
+        '<div class="list-meta">' + dataFmt(d.data) + ' · ' + (ehSaida ? 'Saída' : 'Entrada') + '</div>' +
+      '</div>' +
+      '<div class="list-val" style="color:' + cor + '">' + sinal + ' ' + brl(d.valor) + '</div>' +
       '<div class="venc-actions">' +
         '<button class="del-btn" onclick="editarDeposito(\'' + d.id + '\')"><i class="ti ti-edit"></i></button>' +
-        (d.id!=='mai-dep'?'<button class="del-btn" onclick="delDeposito(\'' + d.id + '\')"><i class="ti ti-trash"></i></button>':'') +
+        (d.id !== 'mai-dep' ? '<button class="del-btn" onclick="delDeposito(\'' + d.id + '\')"><i class="ti ti-trash"></i></button>' : '') +
       '</div>' +
     '</div>';
-  }).join('') : '<div class="empty"><i class="ti ti-piggy-bank"></i><br>Nenhum depósito ainda.</div>';
+  }).join('') : '<div class="empty"><i class="ti ti-piggy-bank"></i><br>Nenhuma transação ainda.</div>';
 
   var projHtml = ['Jul','Ago','Set','Out','Nov','Dez'].map(function(m, i){
     var v = Math.min(reserva.metaTotal, reserva.valor + (i+1)*1000);
@@ -600,6 +610,9 @@ function renderReserva() {
     '</div>';
   }).join('');
 
+  var totalEnt = (reserva.historico||[]).filter(function(d){ return d.tipo !== 'saida'; }).reduce(function(s,d){ return s+d.valor; },0);
+  var totalSai = (reserva.historico||[]).filter(function(d){ return d.tipo === 'saida'; }).reduce(function(s,d){ return s+d.valor; },0);
+
   document.getElementById('sec-reserva').innerHTML =
     '<div class="reserva-big">' +
       '<div class="reserva-val">' + brl(reserva.valor) + '</div>' +
@@ -610,10 +623,15 @@ function renderReserva() {
         '<div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:6px">Faltam ' + brl(faltam) + ' · meta em dezembro/2026</div>' +
       '</div>' +
     '</div>' +
-    '<button class="btn-primary" onclick="openModal(\'modal-dep\')" style="margin-bottom:16px"><i class="ti ti-piggy-bank"></i> Registrar depósito</button>' +
-    '<div class="card"><div class="card-title">Histórico de depósitos</div>' + histHtml + '</div>' +
+    '<div class="metrics">' +
+      '<div class="mcard"><div class="mcard-label">Entradas</div><div class="mcard-val val-green">' + brl(totalEnt) + '</div><div class="mcard-sub">depositado</div></div>' +
+      '<div class="mcard"><div class="mcard-label">Saídas</div><div class="mcard-val ' + (totalSai>0?'val-red':'') + '">' + brl(totalSai) + '</div><div class="mcard-sub">retirado</div></div>' +
+    '</div>' +
+    '<button class="btn-primary" onclick="abrirDepModal()" style="margin-bottom:16px"><i class="ti ti-plus"></i> Nova transação</button>' +
+    '<div class="card"><div class="card-title">Histórico de transações</div>' + histHtml + '</div>' +
     '<div class="card"><div class="card-title">Projeção mensal</div>' + projHtml + '</div>';
 }
+
 
 // ============================================================
 // RENDER: METAS (dinâmico — add/edit/remove)
@@ -805,21 +823,25 @@ async function delVencimento(id) {
 }
 
 // ============================================================
-// CRUD: DEPÓSITOS (add, edit, delete)
+// CRUD: DEPÓSITOS (add entrada/saída, edit, delete)
 // ============================================================
 async function salvarDeposito() {
+  var tipo = document.getElementById('d-tipo').value || 'entrada';
   var val  = parseFloat(document.getElementById('d-val').value);
   var data = document.getElementById('d-data').value;
   var obs  = document.getElementById('d-obs').value.trim();
   if (!val||val<=0||!data) { showToast('Preencha valor e data','err'); return; }
   try {
-    var dep = { id:Date.now().toString(), data:data, valor:val, obs:obs };
+    var dep = { id:Date.now().toString(), data:data, valor:val, obs:obs, tipo:tipo };
     var novoHist  = (reserva.historico||[]).concat([dep]);
-    var novoValor = reserva.valor + val;
+    var delta     = tipo === 'saida' ? -val : val;
+    var novoValor = reserva.valor + delta;
     await fbSet('reserva', Object.assign({},reserva,{ valor:novoValor, historico:novoHist }));
     closeModal('modal-dep');
     ['d-val','d-obs'].forEach(function(id){ document.getElementById(id).value=''; });
-    showToast('Depósito registrado!');
+    document.getElementById('d-data').value = hoje();
+    selDepTipo('entrada', document.querySelector('.dep-tipo-btn[data-tipo="entrada"]'));
+    showToast(tipo === 'saida' ? 'Saída registrada na reserva!' : 'Entrada registrada na reserva!');
   } catch(e) { showToast('Erro ao salvar.','err'); }
 }
 
@@ -827,9 +849,14 @@ function editarDeposito(id) {
   var dep = (reserva.historico||[]).find(function(d){ return d.id===id; });
   if (!dep) return;
   editingDepId = id;
+  var tipo = dep.tipo || 'entrada';
   document.getElementById('de-val').value  = dep.valor;
   document.getElementById('de-data').value = dep.data;
   document.getElementById('de-obs').value  = dep.obs||'';
+  document.getElementById('de-tipo').value = tipo;
+  document.querySelectorAll('.dep-edit-tipo-btn').forEach(function(b){ b.classList.remove('active'); });
+  var btn = document.querySelector('.dep-edit-tipo-btn[data-tipo="' + tipo + '"]');
+  if (btn) btn.classList.add('active');
   openModal('modal-dep-edit');
 }
 
@@ -840,26 +867,33 @@ async function salvarEdicaoDeposito() {
   var novoVal  = parseFloat(document.getElementById('de-val').value);
   var novaData = document.getElementById('de-data').value;
   var novaObs  = document.getElementById('de-obs').value.trim();
+  var novoTipo = document.getElementById('de-tipo').value || 'entrada';
   if (!novoVal||novoVal<=0||!novaData) { showToast('Preencha valor e data','err'); return; }
   try {
-    var diff     = novoVal - depAntigo.valor;
+    // Reverter efeito antigo, aplicar novo
+    var tipoAntigo = depAntigo.tipo || 'entrada';
+    var reverter   = tipoAntigo === 'saida' ? depAntigo.valor : -depAntigo.valor;
+    var aplicar    = novoTipo  === 'saida' ? -novoVal : novoVal;
     var novoHist = (reserva.historico||[]).map(function(d){
-      return d.id === editingDepId ? Object.assign({},d,{valor:novoVal, data:novaData, obs:novaObs}) : d;
+      return d.id === editingDepId
+        ? Object.assign({},d,{valor:novoVal, data:novaData, obs:novaObs, tipo:novoTipo})
+        : d;
     });
-    await fbSet('reserva', Object.assign({},reserva,{ valor:reserva.valor+diff, historico:novoHist }));
+    await fbSet('reserva', Object.assign({},reserva,{ valor:reserva.valor+reverter+aplicar, historico:novoHist }));
     closeModal('modal-dep-edit');
     editingDepId = null;
-    showToast('Depósito atualizado!');
+    showToast('Transação atualizada!');
   } catch(e) { showToast('Erro ao salvar.','err'); }
 }
 
 async function delDeposito(id) {
   var dep = (reserva.historico||[]).find(function(d){ return d.id===id; });
   if (!dep) return;
+  var tipo      = dep.tipo || 'entrada';
+  var reverter  = tipo === 'saida' ? dep.valor : -dep.valor;
   var novoHist  = reserva.historico.filter(function(d){ return d.id!==id; });
-  var novoValor = reserva.valor - dep.valor;
-  await fbSet('reserva', Object.assign({},reserva,{ valor:novoValor, historico:novoHist }));
-  showToast('Depósito removido.');
+  await fbSet('reserva', Object.assign({},reserva,{ valor:reserva.valor+reverter, historico:novoHist }));
+  showToast('Transação removida.');
 }
 
 // ============================================================
@@ -984,6 +1018,30 @@ function selMetaFmt(v, btn) {
   document.querySelectorAll('.fmt-btn').forEach(function(b){ b.classList.remove('active'); });
   btn.classList.add('active');
 }
+function selDepTipo(v, btn) {
+  document.getElementById('d-tipo').value = v;
+  document.querySelectorAll('.dep-tipo-btn').forEach(function(b){ b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  var titulo   = document.getElementById('dep-titulo');
+  var btnSalv  = document.getElementById('dep-btn-salvar');
+  if (titulo)  titulo.textContent = v === 'saida' ? 'Registrar saída' : 'Registrar entrada';
+  if (btnSalv) btnSalv.innerHTML  = v === 'saida'
+    ? '<i class="ti ti-arrow-up-circle"></i> Confirmar saída'
+    : '<i class="ti ti-piggy-bank"></i> Confirmar entrada';
+}
+function selDepEditTipo(v, btn) {
+  document.getElementById('de-tipo').value = v;
+  document.querySelectorAll('.dep-edit-tipo-btn').forEach(function(b){ b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+}
+function abrirDepModal() {
+  selDepTipo('entrada', document.querySelector('.dep-tipo-btn[data-tipo="entrada"]'));
+  document.getElementById('d-val').value  = '';
+  document.getElementById('d-obs').value  = '';
+  document.getElementById('d-data').value = hoje();
+  openModal('modal-dep');
+}
+
 function initCatGrid() {
   var grid = document.getElementById('cat-grid-lanc');
   if (!grid) return;

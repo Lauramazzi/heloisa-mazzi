@@ -191,11 +191,23 @@
   <div class="modal-overlay" id="modal-dep" onclick="closeIfBg(event,'modal-dep')">
     <div class="modal-box">
       <div class="modal-header">
-        <div class="modal-title">Registrar depósito</div>
+        <div class="modal-title" id="dep-titulo">Registrar entrada</div>
         <button class="modal-close" onclick="closeModal('modal-dep')"><i class="ti ti-x"></i></button>
       </div>
       <div class="form-group">
-        <label class="form-label">Valor depositado (R$)</label>
+        <label class="form-label">Tipo de transação</label>
+        <div class="toggle-row">
+          <button class="toggle-btn dep-tipo-btn active" data-tipo="entrada" onclick="selDepTipo('entrada',this)">
+            <i class="ti ti-arrow-down-circle" style="color:var(--green)"></i> Entrada
+          </button>
+          <button class="toggle-btn dep-tipo-btn" data-tipo="saida" onclick="selDepTipo('saida',this)">
+            <i class="ti ti-arrow-up-circle" style="color:var(--red)"></i> Saída
+          </button>
+        </div>
+        <input type="hidden" id="d-tipo" value="entrada">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Valor (R$)</label>
         <input class="form-input" type="number" id="d-val" step="0.01" inputmode="decimal" placeholder="0,00">
       </div>
       <div class="form-group">
@@ -204,9 +216,9 @@
       </div>
       <div class="form-group">
         <label class="form-label">Observação (opcional)</label>
-        <input class="form-input" type="text" id="d-obs" placeholder="Ex: guardado da semana">
+        <input class="form-input" type="text" id="d-obs" placeholder="Ex: guardado da semana, retirada para despesa...">
       </div>
-      <button class="btn-primary" onclick="salvarDeposito()"><i class="ti ti-piggy-bank"></i> Confirmar depósito</button>
+      <button class="btn-primary" id="dep-btn-salvar" onclick="salvarDeposito()"><i class="ti ti-piggy-bank"></i> Confirmar entrada</button>
     </div>
   </div>
 
@@ -251,8 +263,20 @@
   <div class="modal-overlay" id="modal-dep-edit" onclick="closeIfBg(event,'modal-dep-edit')">
     <div class="modal-box">
       <div class="modal-header">
-        <div class="modal-title">Editar depósito</div>
+        <div class="modal-title">Editar transação</div>
         <button class="modal-close" onclick="closeModal('modal-dep-edit')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tipo</label>
+        <div class="toggle-row">
+          <button class="toggle-btn dep-edit-tipo-btn active" data-tipo="entrada" onclick="selDepEditTipo('entrada',this)">
+            <i class="ti ti-arrow-down-circle" style="color:var(--green)"></i> Entrada
+          </button>
+          <button class="toggle-btn dep-edit-tipo-btn" data-tipo="saida" onclick="selDepEditTipo('saida',this)">
+            <i class="ti ti-arrow-up-circle" style="color:var(--red)"></i> Saída
+          </button>
+        </div>
+        <input type="hidden" id="de-tipo" value="entrada">
       </div>
       <div class="form-group">
         <label class="form-label">Valor (R$)</label>
