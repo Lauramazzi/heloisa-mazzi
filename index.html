@@ -459,6 +459,33 @@
     </div>
   </div>
 
+  <!-- ======================================================
+       MODAL: FATURAMENTO DIÁRIO
+  ====================================================== -->
+  <div class="modal-overlay" id="modal-fat-diario" onclick="closeIfBg(event,'modal-fat-diario')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Registrar Faturamento Diário</div>
+        <button class="modal-close" onclick="closeModal('modal-fat-diario')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data</label>
+        <input class="form-input" type="date" id="fd-data">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Faturamento do Dia (R$)</label>
+          <input class="form-input" type="number" id="fd-val" step="0.01" inputmode="decimal" placeholder="0,00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Atendimentos</label>
+          <input class="form-input" type="number" id="fd-atend" inputmode="numeric" placeholder="0">
+        </div>
+      </div>
+      <button class="btn-primary" onclick="salvarFatDiario()"><i class="ti ti-check"></i> Registrar Faturamento</button>
+    </div>
+  </div>
+
 </div><!-- #app -->
 
   <!-- aviso buttons -->

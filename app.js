@@ -65,6 +65,7 @@ let lancamentos = [];
 let reserva = { valor:7199, meta:1000, metaTotal:11742, historico:[] };
 let bebidas = [];
 let bebidasVendas = [];
+let faturamentoDiario = [];
 
 let currentTab = 'painel';
 let histIdx = -1;
@@ -179,6 +180,11 @@ function loadFirebase() {
   db.ref('bebidas_vendas').on('value', function(snap) {
     bebidasVendas = snap.val() ? Object.values(snap.val()) : [];
     if (currentTab === 'bebidas') renderBebidas();
+  });
+
+  db.ref('faturamento_diario').on('value', function(snap) {
+    faturamentoDiario = snap.val() ? Object.values(snap.val()) : [];
+    if (currentTab === 'painel') renderPainel();
   });
 }
 
@@ -351,14 +357,29 @@ function renderPainel() {
   var isCurrent = histIdx === -1;
   var viewed = isCurrent ? null : HIST[histIdx];
   var last = HIST.length ? HIST[HIST.length - 1] : null;
-  var showData = viewed || last;
-  var prevData = viewed
-    ? (histIdx > 0 ? HIST[histIdx - 1] : null)
-    : (HIST.length >= 2 ? HIST[HIST.length - 2] : null);
 
   var filtroMes = isCurrent ? mesAt.m : (viewed ? viewed.m : mesAt.m);
   var lancsDoMes = lancamentos.filter(function(l){ return l.data && l.data.indexOf(filtroMes) === 0; });
   var totalSaidas = lancsDoMes.reduce(function(s,l){ return s + l.valor; }, 0);
+
+  // Calcular faturamento diário para o mês filtrado
+  var fatsDoMes = faturamentoDiario.filter(function(fd){ return fd.data && fd.data.indexOf(filtroMes) === 0; });
+  var totalFatMes = fatsDoMes.reduce(function(s,fd){ return s + fd.valor; }, 0);
+  var totalAtendMes = fatsDoMes.reduce(function(s,fd){ return s + fd.atendimentos; }, 0);
+  var ticketMedioMes = totalAtendMes > 0 ? totalFatMes / totalAtendMes : 0;
+
+  var dadosMes = {
+    fat: totalFatMes,
+    atend: totalAtendMes,
+    ticket: ticketMedioMes,
+    label: mesAt.label,
+    m: mesAt.m
+  };
+
+  var showData = isCurrent ? dadosMes : viewed;
+  var prevData = isCurrent
+    ? last
+    : (histIdx > 0 ? HIST[histIdx - 1] : null);
 
   var canPrev = HIST.length > 0 && !(histIdx === 0);
   var canNext = histIdx !== -1;
@@ -374,10 +395,15 @@ function renderPainel() {
     var fatSeta = diffFat >= 0 ? '↑' : '↓';
     var diffAtend = prevData ? showData.atend - prevData.atend : 0;
     var diffAtendCor = diffAtend >= 0 ? 'var(--green)' : 'var(--red)';
+    
+    var fatLabel = 'Faturamento ' + showData.label;
+    var addBtn = isCurrent ? '<button onclick="abrirFatDiarioModal()" style="background:transparent; border:none; color:var(--gold); cursor:pointer; font-size:13px; display:inline-flex; align-items:center; gap:2px" title="Lançar faturamento diário"><i class="ti ti-plus"></i></button>' : '';
+
     metricsHtml =
-      '<div class="mcard"><div class="mcard-label">Faturamento ' + showData.label + '</div>' +
+      '<div class="mcard">' +
+        '<div class="mcard-label" style="display:flex; justify-content:space-between; align-items:center"><span>' + fatLabel + '</span>' + addBtn + '</div>' +
         '<div class="mcard-val val-green">' + brl(showData.fat) + '</div>' +
-        (prevData ? '<div class="mcard-sub" style="color:' + fatCor + '">' + fatSeta + ' ' + Math.abs(diffFatPct) + '% vs. ' + prevData.label + '</div>' : '<div class="mcard-sub">—</div>') +
+        (prevData ? '<div class="mcard-sub" style="color:' + fatCor + '">' + fatSeta + ' ' + Math.abs(diffFatPct) + '% vs. ' + prevData.label + ' (' + brl(prevData.fat) + ')</div>' : '<div class="mcard-sub">—</div>') +
       '</div>' +
       '<div class="mcard"><div class="mcard-label">Atendimentos</div>' +
         '<div class="mcard-val">' + showData.atend + '</div>' +
@@ -415,6 +441,23 @@ function renderPainel() {
     }
   }
 
+  // Lista de faturamento diário
+  var listFatHtml = '';
+  if (fatsDoMes.length > 0) {
+    var sortedFats = fatsDoMes.slice().sort(function(a,b){ return b.data.localeCompare(a.data); });
+    listFatHtml = '<div class="card"><div class="card-title">Faturamento Diário</div>' +
+      sortedFats.map(function(fd) {
+        return '<div class="list-item">' +
+          '<div class="list-icon" style="background:rgba(76,175,125,0.12)"><i class="ti ti-cash" style="color:var(--green)"></i></div>' +
+          '<div class="list-info"><div class="list-name">' + dataFmt(fd.data) + '</div>' +
+            '<div class="list-meta">' + fd.atendimentos + ' atendimentos · Ticket médio: ' + brl(fd.valor/fd.atendimentos) + '</div></div>' +
+          '<div class="list-val" style="color:var(--green)">+' + brl(fd.valor) + '</div>' +
+          '<button class="del-btn" onclick="delFatDiario(\'' + fd.id + '\')"><i class="ti ti-trash"></i></button>' +
+        '</div>';
+      }).join('') +
+    '</div>';
+  }
+
   document.getElementById('sec-painel').innerHTML =
     '<div class="nav-mes">' +
       '<button class="nav-mes-btn" onclick="navHist(-1)"' + (!canPrev?' disabled':'') + '><i class="ti ti-chevron-left"></i></button>' +
@@ -426,6 +469,7 @@ function renderPainel() {
       '<div style="position:relative;height:180px;width:100%"><canvas id="chart-historico"></canvas></div></div>' : '') +
     (totalSaidas > 0 ? '<div class="card"><div class="card-title">Saídas por Categoria</div>' +
       '<div style="position:relative;height:180px;width:100%"><canvas id="chart-categorias"></canvas></div></div>' : '') +
+    listFatHtml +
     '<div class="card"><div class="card-title">Reserva financeira</div>' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px">' +
         '<div><div style="font-size:11px;color:var(--text2);margin-bottom:2px">Cofrinho Mercado Pago</div><div style="font-size:26px;font-weight:600;color:var(--green);font-family:var(--mono)">' + brl(reserva.valor) + '</div></div>' +
@@ -440,11 +484,11 @@ function renderPainel() {
 
   // Renderizar gráficos após carregar o HTML
   setTimeout(function() {
-    renderCharts(filtroMes, totalSaidas, lancsDoMes);
+    renderCharts(filtroMes, totalSaidas, lancsDoMes, dadosMes);
   }, 50);
 }
 
-function renderCharts(filtroMes, totalSaidas, lancsDoMes) {
+function renderCharts(filtroMes, totalSaidas, lancsDoMes, dadosMes) {
   if (chartHistoricoInstance) {
     chartHistoricoInstance.destroy();
     chartHistoricoInstance = null;
@@ -458,9 +502,12 @@ function renderCharts(filtroMes, totalSaidas, lancsDoMes) {
   var canvasHist = document.getElementById('chart-historico');
   if (canvasHist && HIST.length > 0) {
     var ctxHist = canvasHist.getContext('2d');
-    var labelsHist = HIST.map(function(h) { return h.label; });
-    var dadosFat = HIST.map(function(h) { return h.fat; });
-    var dadosSaidas = HIST.map(function(h) {
+    
+    // Adicionar o ponto do mês corrente atual nos dados do gráfico para faturamento dinâmico
+    var histComAtual = HIST.concat([dadosMes]);
+    var labelsHist = histComAtual.map(function(h) { return h.label; });
+    var dadosFat = histComAtual.map(function(h) { return h.fat; });
+    var dadosSaidas = histComAtual.map(function(h) {
       var mKey = h.m;
       var lancsM = lancamentos.filter(function(l) { return l.data && l.data.indexOf(mKey) === 0; });
       return lancsM.reduce(function(s, l) { return s + l.valor; }, 0);
@@ -1064,9 +1111,16 @@ function abrirFechamento() {
   var mesAt = getMesAtual();
   document.getElementById('f-mes').value = mesAt.m;
   document.getElementById('f-mes-label').textContent = mesAt.label + ' / ' + mesAt.ano;
-  document.getElementById('f-fat').value = '';
-  document.getElementById('f-atend').value = '';
-  document.getElementById('f-ticket-preview').textContent = '—';
+  
+  // Calcular soma de faturamento diário para o mês corrente
+  var fatsDoMes = faturamentoDiario.filter(function(fd){ return fd.data && fd.data.indexOf(mesAt.m) === 0; });
+  var totalFat = fatsDoMes.reduce(function(s,fd){ return s + fd.valor; }, 0);
+  var totalAtend = fatsDoMes.reduce(function(s,fd){ return s + fd.atendimentos; }, 0);
+
+  document.getElementById('f-fat').value = totalFat > 0 ? totalFat.toFixed(2) : '';
+  document.getElementById('f-atend').value = totalAtend > 0 ? totalAtend : '';
+  document.getElementById('f-ticket-preview').textContent = (totalFat > 0 && totalAtend > 0) ? brl(totalFat / totalAtend) : '—';
+  
   openModal('modal-fechamento');
 }
 function calcTicketPreview() {
@@ -1460,6 +1514,42 @@ async function delVendaBebida(id) {
 }
 
 // ============================================================
+// CRUD: FATURAMENTO DIÁRIO
+// ============================================================
+function abrirFatDiarioModal() {
+  document.getElementById('fd-val').value = '';
+  document.getElementById('fd-atend').value = '';
+  document.getElementById('fd-data').value = hoje();
+  openModal('modal-fat-diario');
+}
+
+async function salvarFatDiario() {
+  var val = parseFloat(document.getElementById('fd-val').value);
+  var atend = parseInt(document.getElementById('fd-atend').value);
+  var data = document.getElementById('fd-data').value;
+  if (!val || val <= 0 || !atend || atend <= 0 || !data) {
+    showToast('Preencha data, valor e atendimentos válidos', 'err');
+    return;
+  }
+  try {
+    await fbPush('faturamento_diario', { valor: val, atendimentos: atend, data: data });
+    closeModal('modal-fat-diario');
+    showToast('Faturamento diário registrado!');
+  } catch(e) {
+    showToast('Erro ao salvar faturamento.', 'err');
+  }
+}
+
+async function delFatDiario(id) {
+  try {
+    await fbRemove('faturamento_diario/' + id);
+    showToast('Lançamento removido.');
+  } catch(e) {
+    showToast('Erro ao remover.', 'err');
+  }
+}
+
+// ============================================================
 // UI: SELETORES
 // ============================================================
 function selCat(i) {
@@ -1785,7 +1875,7 @@ window.addEventListener('DOMContentLoaded', async function() {
     document.getElementById('main').style.display = 'block';
     initCatGrid();
     var h = hoje();
-    ['l-data','d-data','b-data','bv-data'].forEach(function(id){
+    ['l-data','d-data','b-data','bv-data','fd-data'].forEach(function(id){
       var el = document.getElementById(id); if (el) el.value = h;
     });
     initHistorico();
