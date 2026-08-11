@@ -1798,8 +1798,11 @@ function exportarFechamento() {
   }
 
   // Saídas do mês
-  var lancs = lancamentos.filter(function(l){ return l.data && l.data.indexOf(mesKey)===0; });
+  var lancs = lancamentos.filter(function(l){ return l.data && l.data.indexOf(mesKey)===0; })
+    .sort(function(a,b){ return a.data.localeCompare(b.data); });
   var totalSaidas = lancs.reduce(function(s,l){ return s+l.valor; }, 0);
+  
+  // Saídas por categoria
   var porCat = {};
   lancs.forEach(function(l){ var k=l.categoria||'Outro'; porCat[k]=(porCat[k]||0)+l.valor; });
   var catRows = Object.entries(porCat).sort(function(a,b){ return b[1]-a[1]; }).map(function(e){
@@ -1807,7 +1810,48 @@ function exportarFechamento() {
     return '<tr><td>'+e[0]+'</td><td class="r">'+brl(e[1])+'</td><td class="r">'+pct+'%</td></tr>';
   }).join('');
 
-  // Vencimentos
+  // Saídas por forma de pagamento
+  var porPag = {};
+  lancs.forEach(function(l){ var k=l.pagamento||'Pix'; porPag[k]=(porPag[k]||0)+l.valor; });
+  var pagRows = Object.entries(porPag).sort(function(a,b){ return b[1]-a[1]; }).map(function(e){
+    return '<tr><td>'+e[0]+'</td><td class="r">'+brl(e[1])+'</td></tr>';
+  }).join('');
+
+  // Lista detalhada de saídas
+  var lancsRows = lancs.map(function(l){
+    return '<tr>' +
+      '<td>' + dataFmt(l.data) + '</td>' +
+      '<td>' + l.desc + '</td>' +
+      '<td>' + l.categoria + '</td>' +
+      '<td>' + (l.pagamento || 'Pix') + '</td>' +
+      '<td class="r">' + brl(l.valor) + '</td>' +
+      '<td>' + (l.obs || '—') + '</td>' +
+    '</tr>';
+  }).join('');
+
+  // Controle de bebidas do mês
+  var comprasB = bebidas.filter(function(b){ return b.data && b.data.indexOf(mesKey) === 0; });
+  var vendasB = bebidasVendas.filter(function(v){ return v.data && v.data.indexOf(mesKey) === 0; });
+  var totalComprasB = comprasB.reduce(function(s,b){ return s + b.valor; }, 0);
+  var totalVendasB = vendasB.reduce(function(s,v){ return s + v.valor; }, 0);
+  
+  var comprasPorProd = {};
+  bebidas.forEach(function(b){
+    if(!comprasPorProd[b.produto]) comprasPorProd[b.produto] = { totalQtd:0, totalVal:0 };
+    comprasPorProd[b.produto].totalQtd += b.qtd;
+    comprasPorProd[b.produto].totalVal += b.valor;
+  });
+  var custoMedio = {};
+  Object.keys(comprasPorProd).forEach(function(p){
+    custoMedio[p] = comprasPorProd[p].totalQtd > 0 ? (comprasPorProd[p].totalVal / comprasPorProd[p].totalQtd) : 0;
+  });
+  var lucroB = vendasB.reduce(function(s,v){
+    var cMed = custoMedio[v.produto] || 0;
+    return s + (v.valor - (v.qtd * cMed));
+  }, 0);
+  var qtdB = vendasB.reduce(function(s,v){ return s + v.qtd; }, 0);
+
+  // Vencimentos do mês
   var totalVenc = VENCIMENTOS_FB.reduce(function(s,v){ return s+v.valor; }, 0);
   var vencRows = VENCIMENTOS_FB.slice().sort(function(a,b){ return a.dia-b.dia; }).map(function(v){
     var pago = vencPago(v, mesKey);
@@ -1839,65 +1883,125 @@ function exportarFechamento() {
     comparFat = '<span style="color:'+(dif>=0?'#2e7d4f':'#c0392b')+'">'+(dif>=0?'▲':'▼')+' '+Math.abs(difPct)+'% vs. '+prev.label+' ('+brl(prev.fat)+')</span>';
   }
 
+  // Metas de faturamento/despesas do mês
+  var ORDER = ['fat','desp','atend','ticket','reserva','prod'];
+  var metaItems = Object.values(metasObj).sort(function(a,b){
+    var ai = ORDER.indexOf(a.id); var bi = ORDER.indexOf(b.id);
+    if (ai>=0&&bi>=0) return ai-bi;
+    if (ai>=0) return -1; if (bi>=0) return 1; return 0;
+  });
+  var metasRows = metaItems.map(function(it){
+    var real = 0;
+    if (it.autoKey) {
+      if (it.autoKey === 'fat') real = fat;
+      else if (it.autoKey === 'desp') real = totalSaidas;
+      else if (it.autoKey === 'atend') real = atend;
+      else if (it.autoKey === 'ticket') real = ticket;
+      else if (it.autoKey === 'reserva') real = reserva.valor;
+      else if (it.autoKey === 'prod') real = lucroB;
+    } else {
+      real = it.realVal !== undefined ? it.realVal : 0;
+    }
+    var ok = it.tipo === 'max' ? real <= it.target : real >= it.target;
+    var statusText = ok ? '<span style="color:#2e7d4f;font-weight:600">✓ Atingida</span>' : '<span style="color:#b25900;font-weight:600">Em andamento</span>';
+    return '<tr><td>'+it.label+'</td><td class="r">'+fmtMeta(it.fmt, it.target)+'</td><td class="r">'+fmtMeta(it.fmt, real)+'</td><td>'+statusText+'</td></tr>';
+  }).join('');
+
   var pctRes = reserva.metaTotal ? Math.round((reserva.valor/reserva.metaTotal)*100) : 0;
   var hojeStr = new Date().toLocaleDateString('pt-BR');
 
   var doc = '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">' +
-    '<title>Fechamento '+mesLabel+'/'+ano+' — Heloísa Mazzi</title>' +
+    '<title>Fechamento Detalhado '+mesLabel+'/'+ano+' — Heloísa Mazzi</title>' +
     '<style>' +
     '*{margin:0;padding:0;box-sizing:border-box}' +
-    'body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1a1a;padding:32px;max-width:800px;margin:0 auto;font-size:13px}' +
+    'body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#222;padding:32px;max-width:850px;margin:0 auto;font-size:12px;line-height:1.4}' +
     'h1{font-size:22px;color:#1e3a5f;margin-bottom:2px}' +
-    '.sub{color:#666;font-size:12px;margin-bottom:20px}' +
+    '.sub{color:#666;font-size:12px;margin-bottom:16px}' +
     '.mes{display:inline-block;background:#1e3a5f;color:#fff;padding:4px 14px;border-radius:6px;font-weight:600;font-size:14px;margin-bottom:20px}' +
-    '.kpis{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap}' +
+    '.kpis{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}' +
     '.kpi{flex:1;min-width:130px;border:1px solid #e0e0e0;border-radius:8px;padding:12px 14px}' +
     '.kpi .lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px}' +
     '.kpi .val{font-size:20px;font-weight:700;color:#1e3a5f;margin-top:4px}' +
-    '.kpi .cmp{font-size:11px;margin-top:3px}' +
-    'h2{font-size:14px;color:#1e3a5f;margin:22px 0 8px;padding-bottom:5px;border-bottom:2px solid #1e3a5f}' +
-    'table{width:100%;border-collapse:collapse;font-size:12px}' +
-    'th{text-align:left;color:#888;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:6px 8px;border-bottom:1px solid #ddd}' +
-    'td{padding:6px 8px;border-bottom:1px solid #f0f0f0}' +
+    '.kpi .cmp{font-size:10px;margin-top:3px}' +
+    'h2{font-size:13px;color:#1e3a5f;margin:24px 0 8px;padding-bottom:5px;border-bottom:2px solid #1e3a5f;text-transform:uppercase;letter-spacing:.5px}' +
+    'table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:16px}' +
+    'th{text-align:left;color:#777;font-size:9px;text-transform:uppercase;letter-spacing:.5px;padding:6px 8px;border-bottom:1.5px solid #1e3a5f;background:#fcfcfc}' +
+    'td{padding:6px 8px;border-bottom:1px solid #f0f0f0;vertical-align:middle}' +
     'td.r,th.r{text-align:right}' +
-    '.tot{font-weight:700;color:#1e3a5f}' +
-    '.result{background:#f5f8fc;border:1px solid #d5e2f0;border-radius:8px;padding:14px 16px;margin-top:10px;display:flex;justify-content:space-between;align-items:center}' +
+    '.tot{font-weight:700;color:#1e3a5f;background:#f9fbfd}' +
+    '.result{background:#f4f7fa;border:1px solid #c8d6e5;border-radius:8px;padding:14px 16px;margin-top:10px;display:flex;justify-content:space-between;align-items:center}' +
     '.result .big{font-size:22px;font-weight:700}' +
     '.foot{margin-top:32px;padding-top:14px;border-top:1px solid #eee;color:#aaa;font-size:10px;text-align:center}' +
-    '@media print{body{padding:0}.noprint{display:none}}' +
+    '.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}' +
+    '@media print{body{padding:0}.noprint{display:none}.page-break{page-break-before:always}}' +
     '.noprint{margin-bottom:20px;text-align:center}' +
-    '.noprint button{background:#1e3a5f;color:#fff;border:0;padding:10px 24px;border-radius:8px;font-size:14px;cursor:pointer}' +
+    '.noprint button{background:#1e3a5f;color:#fff;border:0;padding:10px 24px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600}' +
     '</style></head><body>' +
-    '<div class="noprint"><button onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button></div>' +
+    '<div class="noprint"><button onclick="window.print()">🖨️ Salvar como PDF / Imprimir Relatório Detalhado</button></div>' +
     '<h1>✂️ Heloísa Mazzi Barbearia</h1>' +
-    '<div class="sub">Relatório de fechamento mensal · gerado em '+hojeStr+'</div>' +
+    '<div class="sub">Relatório de fechamento mensal detalhado · gerado em '+hojeStr+'</div>' +
     '<div class="mes">'+mesLabel+' / '+ano+'</div>' +
     '<div class="kpis">' +
       '<div class="kpi"><div class="lbl">Faturamento</div><div class="val">'+brl(fat)+'</div><div class="cmp">'+comparFat+'</div></div>' +
       '<div class="kpi"><div class="lbl">Atendimentos</div><div class="val">'+atend+'</div></div>' +
       '<div class="kpi"><div class="lbl">Ticket médio</div><div class="val">'+brl(ticket)+'</div></div>' +
     '</div>' +
-    '<h2>Saídas por categoria</h2>' +
-    (catRows ? '<table><thead><tr><th>Categoria</th><th class="r">Valor</th><th class="r">%</th></tr></thead><tbody>'+catRows+
-      '<tr class="tot"><td>Total de saídas</td><td class="r">'+brl(totalSaidas)+'</td><td class="r">100%</td></tr></tbody></table>' +
-      '<div class="foot">Heloísa Mazzi Barbearia · Rua Ambrósio dos Santos, 749 · Gerado pelo app de gestão financeira</div>' +
-      '</body></html>'
-      : '<p style="color:#999">Nenhuma saída lançada neste mês.</p>') +
-    '<h2>Vencimentos / Contas do mês</h2>' +
+    '<h2>Resultado do período</h2>' +
+    '<div class="result"><div><div style="font-size:11px;color:#666;text-transform:uppercase">Operacional (Faturamento − Saídas)</div>' +
+      '<div style="font-size:11px;color:#999;margin-top:2px">'+brl(fat)+' − '+brl(totalSaidas)+'</div></div>' +
+      '<div class="big" style="color:'+(resultado>=0?'#2e7d4f':'#c0392b')+'">'+brl(resultado)+'</div></div>';
+
+  doc += '<div class="grid-2">' +
+    '<div>' +
+      '<h2>Saídas por categoria</h2>' +
+      (catRows ? '<table><thead><tr><th>Categoria</th><th class="r">Valor</th><th class="r">%</th></tr></thead><tbody>'+catRows+
+        '<tr class="tot"><td>Total de saídas</td><td class="r">'+brl(totalSaidas)+'</td><td class="r">100%</td></tr></tbody></table>'
+        : '<p style="color:#999;font-size:11px">Nenhuma saída lançada.</p>') +
+    '</div>' +
+    '<div>' +
+      '<h2>Por forma de pagamento</h2>' +
+      (pagRows ? '<table><thead><tr><th>Forma</th><th class="r">Valor</th></tr></thead><tbody>'+pagRows+'</tbody></table>'
+        : '<p style="color:#999;font-size:11px">Nenhum pagamento registrado.</p>') +
+    '</div>' +
+  '</div>';
+
+  doc += '<div class="grid-2">' +
+    '<div>' +
+      '<h2>Estoque & Bebidas (Vendas)</h2>' +
+      '<table><tbody>' +
+        '<tr><td>Qtd de itens vendidos</td><td class="r tot">'+qtdB+' un</td></tr>' +
+        '<tr><td>Faturamento vendas</td><td class="r" style="color:#2e7d4f">'+brl(totalVendasB)+'</td></tr>' +
+        '<tr><td>Custo das unidades</td><td class="r" style="color:#c0392b">- '+brl(totalVendasB - lucroB)+'</td></tr>' +
+        '<tr class="tot"><td>Lucro Líquido Real</td><td class="r" style="color:#2e7d4f">'+brl(lucroB)+'</td></tr>' +
+      '</tbody></table>' +
+    '</div>' +
+    '<div>' +
+      '<h2>Cofrinho & Reserva</h2>' +
+      '<table><tbody>' +
+        '<tr><td>Saldo no cofrinho</td><td class="r tot">'+brl(reserva.valor)+'</td></tr>' +
+        '<tr><td>Meta total recomendada</td><td class="r">'+brl(reserva.metaTotal)+'</td></tr>' +
+        '<tr class="tot"><td>Meta atingida</td><td class="r">'+pctRes+'%</td></tr>' +
+      '</tbody></table>' +
+    '</div>' +
+  '</div>';
+
+  if (metasRows) {
+    doc += '<h2>Status de Metas</h2>' +
+      '<table><thead><tr><th>Meta</th><th class="r">Alvo (Meta)</th><th class="r">Realizado</th><th>Status</th></tr></thead><tbody>' + metasRows + '</tbody></table>';
+  }
+
+  doc += '<h2>Vencimentos e Contas do mês</h2>' +
     (vencRows ? '<table><thead><tr><th>Conta</th><th>Tipo</th><th class="r">Valor</th><th class="r">Status</th></tr></thead><tbody>'+vencRows+
       '<tr class="tot"><td colspan="2">Total comprometido</td><td class="r">'+brl(totalVenc)+'</td><td></td></tr></tbody></table>'
-      : '<p style="color:#999">Nenhum vencimento cadastrado.</p>') +
-    '<h2>Reserva de emergência</h2>' +
-    '<table><tbody>' +
-      '<tr><td>Saldo atual</td><td class="r tot">'+brl(reserva.valor)+'</td></tr>' +
-      '<tr><td>Meta total</td><td class="r">'+brl(reserva.metaTotal)+'</td></tr>' +
-      '<tr><td>Progresso</td><td class="r">'+pctRes+'%</td></tr>' +
-    '</tbody></table>' +
-    '<h2>Resultado do mês</h2>' +
-    '<div class="result"><div><div style="font-size:11px;color:#888;text-transform:uppercase">Faturamento − Saídas</div>' +
-      '<div style="font-size:11px;color:#aaa;margin-top:2px">'+brl(fat)+' − '+brl(totalSaidas)+'</div></div>' +
-      '<div class="big" style="color:'+(resultado>=0?'#2e7d4f':'#c0392b')+'">'+brl(resultado)+'</div></div>' +
-    '<div class="foot">Heloísa Mazzi Barbearia · Rua Ambrósio dos Santos, 749 · Gerado pelo app de gestão financeira</div>' +
+      : '<p style="color:#999;font-size:11px">Nenhum vencimento cadastrado.</p>');
+
+  if (lancsRows) {
+    doc += '<div class="page-break"></div>' +
+      '<h2>Lista completa de saídas (lançamentos)</h2>' +
+      '<table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th class="r">Valor</th><th>Observações</th></tr></thead><tbody>' + lancsRows + '</tbody></table>';
+  }
+
+  doc += '<div class="foot">Heloísa Mazzi Barbearia · Rua Ambrósio dos Santos, 749 · Gerado pelo app de gestão financeira</div>' +
     '</body></html>';
 
   var w = window.open('', '_blank');
