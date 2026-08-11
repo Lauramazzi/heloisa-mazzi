@@ -1,7 +1,7 @@
 // ============================================================
 // SERVICE WORKER — Heloísa Mazzi Barbearia v2
 // ============================================================
-const CACHE = 'heloisa-mazzi-v2';
+const CACHE = 'heloisa-mazzi-v3';
 const STATIC = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', e => {
