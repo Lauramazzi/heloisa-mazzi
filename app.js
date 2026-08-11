@@ -1300,8 +1300,11 @@ async function salvarFechamento() {
   try {
     await fbSet('historico/'+m, { m:m, label:label, fat:fat, atend:atend, ticket:ticket });
     closeModal('modal-fechamento');
-    histIdx = -1;
-    showToast('✓ ' + label + '/' + d.getFullYear() + ' fechado! Faturamento: ' + brl(fat));
+    var mesAt = getMesAtual();
+    if (m === mesAt.m) {
+      histIdx = -1;
+    }
+    showToast('✓ ' + label + '/' + d.getFullYear() + ' atualizado! Faturamento: ' + brl(fat));
   } catch(e) { showToast('Erro ao salvar.','err'); }
 }
 
@@ -1769,23 +1772,30 @@ function initCatGrid() {
   }).join('');
 }
 
-// ============================================================
-// EXPORTAR RELATÓRIO DO MÊS (PDF via impressão)
-// ============================================================
 function exportarFechamento() {
   var isCurrent = histIdx === -1;
   var mesAt = getMesAtual();
-  var dados = isCurrent ? (HIST.length ? HIST[HIST.length-1] : null) : HIST[histIdx];
+  var viewed = isCurrent ? null : HIST[histIdx];
+  var last = HIST.length ? HIST[HIST.length - 1] : null;
 
-  // Mês de referência para filtrar saídas/vencimentos
-  var mesKey = isCurrent ? mesAt.m : (dados ? dados.m : mesAt.m);
+  var mesKey = isCurrent ? mesAt.m : (viewed ? viewed.m : mesAt.m);
   var mesLabel, ano;
-  if (dados) { mesLabel = dados.label; ano = dados.m.slice(0,4); }
-  else { mesLabel = mesAt.label; ano = String(mesAt.ano); }
+  if (viewed) { 
+    mesLabel = viewed.label; 
+    ano = viewed.m.slice(0,4); 
+  } else { 
+    mesLabel = mesAt.label; 
+    ano = String(mesAt.ano); 
+  }
 
   // Comparativo com mês anterior
-  var idxRef = dados ? HIST.findIndex(function(h){ return h.m===dados.m; }) : -1;
-  var prev = (idxRef > 0) ? HIST[idxRef-1] : null;
+  var idxRef = viewed ? HIST.findIndex(function(h){ return h.m === viewed.m; }) : -1;
+  var prev = null;
+  if (isCurrent) {
+    prev = last;
+  } else if (idxRef > 0) {
+    prev = HIST[idxRef-1];
+  }
 
   // Saídas do mês
   var lancs = lancamentos.filter(function(l){ return l.data && l.data.indexOf(mesKey)===0; });
@@ -1804,15 +1814,28 @@ function exportarFechamento() {
     return '<tr><td>'+v.nome+'</td><td>'+tipoLabel(v)+'</td><td class="r">'+brl(v.valor)+'</td><td class="r">'+(pago?'✓ pago':'—')+'</td></tr>';
   }).join('');
 
-  var fat = dados ? dados.fat : 0;
-  var atend = dados ? dados.atend : 0;
-  var ticket = dados ? dados.ticket : 0;
+  // Métricas do fechamento (faturamento dinâmico no mês atual)
+  var fat = 0;
+  var atend = 0;
+  var ticket = 0;
+
+  if (isCurrent) {
+    var fatsDoMes = faturamentoDiario.filter(function(fd){ return fd.data && fd.data.indexOf(mesKey) === 0; });
+    fat = fatsDoMes.reduce(function(s,fd){ return s + fd.valor; }, 0);
+    atend = fatsDoMes.reduce(function(s,fd){ return s + fd.atendimentos; }, 0);
+    ticket = atend > 0 ? fat / atend : 0;
+  } else if (viewed) {
+    fat = viewed.fat;
+    atend = viewed.atend;
+    ticket = viewed.ticket;
+  }
+  
   var resultado = fat - totalSaidas;
 
   var comparFat = '';
   if (prev) {
     var dif = fat - prev.fat;
-    var difPct = Math.round((dif/prev.fat)*100);
+    var difPct = prev.fat > 0 ? Math.round((dif/prev.fat)*100) : 0;
     comparFat = '<span style="color:'+(dif>=0?'#2e7d4f':'#c0392b')+'">'+(dif>=0?'▲':'▼')+' '+Math.abs(difPct)+'% vs. '+prev.label+' ('+brl(prev.fat)+')</span>';
   }
 
@@ -1856,7 +1879,9 @@ function exportarFechamento() {
     '</div>' +
     '<h2>Saídas por categoria</h2>' +
     (catRows ? '<table><thead><tr><th>Categoria</th><th class="r">Valor</th><th class="r">%</th></tr></thead><tbody>'+catRows+
-      '<tr class="tot"><td>Total de saídas</td><td class="r">'+brl(totalSaidas)+'</td><td class="r">100%</td></tr></tbody></table>'
+      '<tr class="tot"><td>Total de saídas</td><td class="r">'+brl(totalSaidas)+'</td><td class="r">100%</td></tr></tbody></table>' +
+      '<div class="foot">Heloísa Mazzi Barbearia · Rua Ambrósio dos Santos, 749 · Gerado pelo app de gestão financeira</div>' +
+      '</body></html>'
       : '<p style="color:#999">Nenhuma saída lançada neste mês.</p>') +
     '<h2>Vencimentos / Contas do mês</h2>' +
     (vencRows ? '<table><thead><tr><th>Conta</th><th>Tipo</th><th class="r">Valor</th><th class="r">Status</th></tr></thead><tbody>'+vencRows+
