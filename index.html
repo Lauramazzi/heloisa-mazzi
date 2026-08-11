@@ -17,6 +17,35 @@
 </head>
 <body>
 
+<!-- TELA DE BLOQUEIO POR PIN -->
+<div id="pin-lock-screen" style="display:none">
+  <div class="pin-wrap">
+    <div class="pin-logo"><i class="ti ti-scissors"></i></div>
+    <div class="pin-title">Heloísa Mazzi</div>
+    <div class="pin-subtitle" id="pin-screen-msg">Insira seu PIN de segurança</div>
+    <div class="pin-dots">
+      <div class="pin-dot"></div>
+      <div class="pin-dot"></div>
+      <div class="pin-dot"></div>
+      <div class="pin-dot"></div>
+    </div>
+    <div class="pin-keyboard">
+      <button class="pin-key" onclick="pressPinKey(1)">1</button>
+      <button class="pin-key" onclick="pressPinKey(2)">2</button>
+      <button class="pin-key" onclick="pressPinKey(3)">3</button>
+      <button class="pin-key" onclick="pressPinKey(4)">4</button>
+      <button class="pin-key" onclick="pressPinKey(5)">5</button>
+      <button class="pin-key" onclick="pressPinKey(6)">6</button>
+      <button class="pin-key" onclick="pressPinKey(7)">7</button>
+      <button class="pin-key" onclick="pressPinKey(8)">8</button>
+      <button class="pin-key" onclick="pressPinKey(9)">9</button>
+      <button class="pin-key pin-key-empty"></button>
+      <button class="pin-key" onclick="pressPinKey(0)">0</button>
+      <button class="pin-key pin-key-back" onclick="pressPinKey('back')"><i class="ti ti-backspace"></i></button>
+    </div>
+  </div>
+</div>
+
 <div id="app">
 
   <!-- LOADING -->
@@ -39,7 +68,12 @@
             <div class="brand-sub">Gestão financeira</div>
           </div>
         </div>
-        <span class="mes-tag" id="mes-tag">jul/2026</span>
+        <div style="display:flex; align-items:center; gap:8px">
+          <button id="btn-pin-lock" class="nav-mes-btn" style="width:30px; height:30px; border-radius:50%; font-size:13px" onclick="abrirConfiguracaoPin()" title="Configurações de PIN">
+            <i class="ti ti-lock"></i>
+          </button>
+          <span class="mes-tag" id="mes-tag">jul/2026</span>
+        </div>
       </div>
 
       <!-- SEÇÕES -->
@@ -235,7 +269,7 @@
   </div>
 
   <!-- ======================================================
-       MODAL: BEBIDA
+       MODAL: BEBIDA (COMPRA)
   ====================================================== -->
   <div class="modal-overlay" id="modal-bev" onclick="closeIfBg(event,'modal-bev')">
     <div class="modal-box">
@@ -266,6 +300,39 @@
         <input class="form-input" type="date" id="b-data">
       </div>
       <button class="btn-primary" onclick="salvarBebida()"><i class="ti ti-check"></i> Registrar compra</button>
+    </div>
+  </div>
+
+  <!-- ======================================================
+       MODAL: REGISTRAR VENDA DE BEBIDA
+  ====================================================== -->
+  <div class="modal-overlay" id="modal-bev-venda" onclick="closeIfBg(event,'modal-bev-venda')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Registrar venda de bebida</div>
+        <button class="modal-close" onclick="closeModal('modal-bev-venda')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Produto</label>
+        <select class="form-select" id="bv-prod" onchange="sugerirPrecoVenda()">
+          <!-- Populado dinamicamente -->
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Quantidade</label>
+          <input class="form-input" type="number" id="bv-qtd" placeholder="0" min="1" value="1" oninput="calcVendaTotalPreview()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Valor total (R$)</label>
+          <input class="form-input" type="number" id="bv-val" step="0.01" placeholder="0,00">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data</label>
+        <input class="form-input" type="date" id="bv-data">
+      </div>
+      <button class="btn-primary" onclick="salvarVendaBebida()"><i class="ti ti-check"></i> Registrar venda</button>
     </div>
   </div>
 
@@ -351,6 +418,47 @@
     </div>
   </div>
 
+  <!-- ======================================================
+       MODAL: CONFIGURAÇÃO DO PIN (SENHA)
+  ====================================================== -->
+  <div class="modal-overlay" id="modal-pin-setup" onclick="closeIfBg(event,'modal-pin-setup')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Configurar PIN de Acesso</div>
+        <button class="modal-close" onclick="closeModal('modal-pin-setup')"><i class="ti ti-x"></i></button>
+      </div>
+      
+      <!-- Criar PIN -->
+      <div id="pin-setup-create" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Criar PIN de 4 dígitos</label>
+          <input class="form-input" type="password" id="p-new-pin" maxlength="4" inputmode="numeric" placeholder="••••" style="text-align:center; font-size:24px; letter-spacing:8px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirme o PIN</label>
+          <input class="form-input" type="password" id="p-new-pin-conf" maxlength="4" inputmode="numeric" placeholder="••••" style="text-align:center; font-size:24px; letter-spacing:8px">
+        </div>
+        <button class="btn-primary" onclick="salvarNovoPin()"><i class="ti ti-check"></i> Ativar PIN</button>
+      </div>
+
+      <!-- Desativar PIN -->
+      <div id="pin-setup-remove" style="display:none">
+        <div class="alert alert-green">
+          <i class="ti ti-shield-check"></i>
+          <div>
+            <div class="alert-title">PIN Ativo</div>
+            <div class="alert-sub">O acesso aos dados está protegido localmente.</div>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:16px">
+          <label class="form-label">Para desativar, digite seu PIN atual:</label>
+          <input class="form-input" type="password" id="p-curr-pin" maxlength="4" inputmode="numeric" placeholder="••••" style="text-align:center; font-size:24px; letter-spacing:8px">
+        </div>
+        <button class="btn-primary" style="background:var(--red); color:white; border:none" onclick="removerPin()"><i class="ti ti-lock-off"></i> Desativar PIN</button>
+      </div>
+    </div>
+  </div>
+
 </div><!-- #app -->
 
   <!-- aviso buttons -->
@@ -364,6 +472,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

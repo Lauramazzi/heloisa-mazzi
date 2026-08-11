@@ -64,6 +64,7 @@ let metasObj = {};       // { id: { id, label, target, tipo, fmt, autoKey?, real
 let lancamentos = [];
 let reserva = { valor:7199, meta:1000, metaTotal:11742, historico:[] };
 let bebidas = [];
+let bebidasVendas = [];
 
 let currentTab = 'painel';
 let histIdx = -1;
@@ -72,6 +73,8 @@ let pagSel = 'Pix';
 let editingVencId = null;
 let editingMetaId = null;
 let editingDepId = null;
+let chartHistoricoInstance = null;
+let chartCategoriasInstance = null;
 
 // ============================================================
 // HELPERS
@@ -170,6 +173,11 @@ function loadFirebase() {
 
   db.ref('bebidas').on('value', function(snap) {
     bebidas = snap.val() ? Object.values(snap.val()) : [];
+    if (currentTab === 'bebidas') renderBebidas();
+  });
+
+  db.ref('bebidas_vendas').on('value', function(snap) {
+    bebidasVendas = snap.val() ? Object.values(snap.val()) : [];
     if (currentTab === 'bebidas') renderBebidas();
   });
 }
@@ -358,13 +366,6 @@ function renderPainel() {
     ? (mesAt.label + '/' + mesAt.ano + ' <span style="font-size:10px;color:var(--text3)">(atual)</span>')
     : (viewed.label + '/' + viewed.m.slice(0, 4));
 
-  var maxFat = HIST.length ? Math.max.apply(null, HIST.map(function(h){ return h.fat; })) : 1;
-  var barras = HIST.map(function(h, i) {
-    var pct = Math.round((h.fat / maxFat) * 100);
-    var selected = isCurrent ? i === HIST.length - 1 : i === histIdx;
-    return '<div class="bar-col"><div class="bar-fill" style="height:' + pct + '%;background:' + (selected?'var(--gold)':'var(--bg3)') + ';border:0.5px solid ' + (selected?'var(--gold)':'var(--border2)') + '"></div><div class="bar-label">' + h.label + '</div></div>';
-  }).join('');
-
   var metricsHtml = '';
   if (showData) {
     var diffFat = prevData ? showData.fat - prevData.fat : 0;
@@ -421,11 +422,10 @@ function renderPainel() {
       '<button class="nav-mes-btn" onclick="navHist(1)"' + (!canNext?' disabled':'') + '><i class="ti ti-chevron-right"></i></button>' +
     '</div>' +
     '<div class="metrics">' + metricsHtml + '</div>' +
-    (HIST.length ? '<div class="card"><div class="card-title">Faturamento histórico</div><div class="bar-chart">' + barras + '</div>' +
-      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-top:6px">' +
-        '<span>' + brl(HIST[0].fat) + ' em ' + HIST[0].label + '</span>' +
-        '<span style="color:var(--gold)">' + brl(HIST.reduce(function(mx,h){ return h.fat>mx.fat?h:mx; },HIST[0]).fat) + ' recorde ★</span>' +
-      '</div></div>' : '') +
+    (HIST.length ? '<div class="card"><div class="card-title">Faturamento vs. Saídas Histórico</div>' +
+      '<div style="position:relative;height:180px;width:100%"><canvas id="chart-historico"></canvas></div></div>' : '') +
+    (totalSaidas > 0 ? '<div class="card"><div class="card-title">Saídas por Categoria</div>' +
+      '<div style="position:relative;height:180px;width:100%"><canvas id="chart-categorias"></canvas></div></div>' : '') +
     '<div class="card"><div class="card-title">Reserva financeira</div>' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px">' +
         '<div><div style="font-size:11px;color:var(--text2);margin-bottom:2px">Cofrinho Mercado Pago</div><div style="font-size:26px;font-weight:600;color:var(--green);font-family:var(--mono)">' + brl(reserva.valor) + '</div></div>' +
@@ -437,7 +437,148 @@ function renderPainel() {
     (insightsHtml ? '<div class="card"><div class="card-title">Insights</div>' + insightsHtml + '</div>' : '') +
     (isCurrent ? '<button class="btn-primary" onclick="abrirFechamento()" style="margin-bottom:8px"><i class="ti ti-calendar-check"></i> Fechar mês — ' + mesAt.label + '/' + mesAt.ano + '</button>' : '') +
     (showData ? '<button class="btn-secondary" onclick="exportarFechamento()" style="margin-bottom:8px"><i class="ti ti-file-export"></i> Exportar relatório — ' + (isCurrent?mesAt.label:showData.label) + '</button>' : '');
+
+  // Renderizar gráficos após carregar o HTML
+  setTimeout(function() {
+    renderCharts(filtroMes, totalSaidas, lancsDoMes);
+  }, 50);
 }
+
+function renderCharts(filtroMes, totalSaidas, lancsDoMes) {
+  if (chartHistoricoInstance) {
+    chartHistoricoInstance.destroy();
+    chartHistoricoInstance = null;
+  }
+  if (chartCategoriasInstance) {
+    chartCategoriasInstance.destroy();
+    chartCategoriasInstance = null;
+  }
+
+  // 1) Gráfico Histórico
+  var canvasHist = document.getElementById('chart-historico');
+  if (canvasHist && HIST.length > 0) {
+    var ctxHist = canvasHist.getContext('2d');
+    var labelsHist = HIST.map(function(h) { return h.label; });
+    var dadosFat = HIST.map(function(h) { return h.fat; });
+    var dadosSaidas = HIST.map(function(h) {
+      var mKey = h.m;
+      var lancsM = lancamentos.filter(function(l) { return l.data && l.data.indexOf(mKey) === 0; });
+      return lancsM.reduce(function(s, l) { return s + l.valor; }, 0);
+    });
+
+    chartHistoricoInstance = new Chart(ctxHist, {
+      type: 'line',
+      data: {
+        labels: labelsHist,
+        datasets: [
+          {
+            label: 'Faturamento',
+            data: dadosFat,
+            borderColor: '#FAC775',
+            backgroundColor: 'rgba(250, 199, 117, 0.05)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true
+          },
+          {
+            label: 'Saídas',
+            data: dadosSaidas,
+            borderColor: '#e05555',
+            backgroundColor: 'rgba(224, 85, 85, 0.05)',
+            borderWidth: 1.5,
+            tension: 0.3,
+            fill: true
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: {
+              color: '#8c8980',
+              font: { family: 'DM Sans', size: 10 }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: '#8c8980', font: { family: 'DM Sans', size: 9 } }
+          },
+          y: {
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: {
+              color: '#8c8980',
+              font: { family: 'DM Sans', size: 9 },
+              callback: function(val) { return 'R$ ' + val; }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // 2) Gráfico de Categorias (Rosca)
+  var canvasCat = document.getElementById('chart-categorias');
+  if (canvasCat && totalSaidas > 0) {
+    var ctxCat = canvasCat.getContext('2d');
+    var porCat = {};
+    lancsDoMes.forEach(function(l) {
+      var k = l.categoria || 'Outro';
+      porCat[k] = (porCat[k] || 0) + l.valor;
+    });
+
+    var sortedCats = Object.entries(porCat).sort(function(a, b) { return b[1] - a[1]; });
+    var labelsCat = sortedCats.map(function(e) { return e[0]; });
+    var valuesCat = sortedCats.map(function(e) { return e[1]; });
+    var colorsCat = labelsCat.map(function(name) {
+      var cat = CATS.find(function(c) { return c.nome === name; });
+      return cat ? cat.cor : '#8c8980';
+    });
+
+    chartCategoriasInstance = new Chart(ctxCat, {
+      type: 'doughnut',
+      data: {
+        labels: labelsCat,
+        datasets: [{
+          data: valuesCat,
+          backgroundColor: colorsCat,
+          borderWidth: 1.5,
+          borderColor: '#1a1a18'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: {
+              color: '#8c8980',
+              font: { family: 'DM Sans', size: 10 },
+              boxWidth: 10
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                var val = context.raw;
+                var pct = Math.round((val / totalSaidas) * 100);
+                return ' ' + context.label + ': R$ ' + val.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' (' + pct + '%)';
+              }
+            }
+          }
+        },
+        cutout: '65%'
+      }
+    });
+  }
+}
+
 
 // ============================================================
 // RENDER: MÊS ATUAL (saídas)
@@ -463,21 +604,20 @@ function renderMes() {
     '</div>';
   }).join('');
 
-  var lista = lancsDoMes.length
-    ? lancsDoMes.map(function(l){
-        var cat = CATS.find(function(c){ return c.nome===l.categoria; })||CATS[0];
-        return '<div class="list-item">' +
-          '<div class="list-icon" style="background:' + cat.bg + '"><i class="ti ' + cat.icon + '" style="color:' + cat.cor + '"></i></div>' +
-          '<div class="list-info"><div class="list-name">' + l.desc + '</div>' +
-          '<div class="list-meta">' + dataFmt(l.data) + ' · ' + l.categoria + (l.pagamento?' · '+l.pagamento:'') + (l.obs?' · '+l.obs:'') + '</div></div>' +
-          '<div class="list-val" style="color:var(--red)">' + brl(l.valor) + '</div>' +
-          '<button class="del-btn" onclick="delLanc(\'' + l.id + '\')"><i class="ti ti-trash"></i></button>' +
-        '</div>';
-      }).join('')
-    : '<div class="empty"><i class="ti ti-inbox"></i><br>Nenhuma saída lançada ainda.</div>';
+  // Salvar valores antigos do filtro antes de reconstruir o DOM
+  var buscaVal = '';
+  var catVal = '';
+  var buscaInput = document.getElementById('s-busca');
+  var catSelect = document.getElementById('s-filtro-cat');
+  if (buscaInput) buscaVal = buscaInput.value;
+  if (catSelect) catVal = catSelect.value;
 
   var modalTitle = document.querySelector('#modal-lanc .modal-title');
   if (modalTitle) modalTitle.textContent = 'Nova saída — ' + mesAt.label + '/' + mesAt.ano;
+
+  var catOptions = CATS.map(function(c){
+    return '<option value="' + c.nome + '">' + c.nome + '</option>';
+  }).join('');
 
   document.getElementById('sec-junho').innerHTML =
     '<div class="sec-header">' +
@@ -489,7 +629,88 @@ function renderMes() {
       '<div class="mcard"><div class="mcard-label">Barbearia</div><div class="mcard-val val-amber">' + brl(barb) + '</div><div class="mcard-sub">Pessoal: ' + brl(pes) + '</div></div>' +
     '</div>' +
     (lancsDoMes.length > 0 && catHtml ? '<div class="card"><div class="card-title">Por categoria</div>' + catHtml + '</div>' : '') +
-    '<div class="card"><div class="card-title">Lançamentos</div>' + lista + '</div>';
+    '<div class="card">' +
+      '<div class="card-title">Lançamentos</div>' +
+      '<div class="filter-bar" style="margin-bottom:14px; display:flex; gap:6px; flex-wrap:wrap">' +
+        '<input type="text" id="s-busca" placeholder="Buscar despesa..." class="form-input" style="flex:2; padding:8px 12px; font-size:13px; height:36px" oninput="atualizarListaFiltrada()">' +
+        '<select id="s-filtro-cat" class="form-select" style="flex:1.2; padding:8px 12px; font-size:13px; height:36px; background-position: calc(100% - 10px) 50%" onchange="atualizarListaFiltrada()">' +
+          '<option value="">Categorias</option>' + catOptions +
+        '</select>' +
+        '<button class="btn-add" style="height:36px; padding:0 12px" onclick="exportarSaidasCSV()" title="Exportar CSV"><i class="ti ti-download"></i> CSV</button>' +
+      '</div>' +
+      '<div id="lancs-list-container"></div>' +
+    '</div>';
+
+  // Restaurar valores antigos dos filtros
+  var newBuscaInput = document.getElementById('s-busca');
+  var newCatSelect = document.getElementById('s-filtro-cat');
+  if (newBuscaInput) newBuscaInput.value = buscaVal;
+  if (newCatSelect) newCatSelect.value = catVal;
+
+  atualizarListaFiltrada();
+}
+
+function atualizarListaFiltrada() {
+  var mesAt = getMesAtual();
+  var query = (document.getElementById('s-busca')?.value || '').toLowerCase().trim();
+  var catFilter = document.getElementById('s-filtro-cat')?.value || '';
+
+  var lancsDoMes = lancamentos.filter(function(l){ return l.data && l.data.indexOf(mesAt.m) === 0; })
+    .sort(function(a,b){ return b.data.localeCompare(a.data); });
+
+  var filtrados = lancsDoMes.filter(function(l) {
+    var matchQuery = !query || l.desc.toLowerCase().indexOf(query) !== -1 || (l.obs && l.obs.toLowerCase().indexOf(query) !== -1);
+    var matchCat = !catFilter || l.categoria === catFilter;
+    return matchQuery && matchCat;
+  });
+
+  var container = document.getElementById('lancs-list-container');
+  if (!container) return;
+
+  container.innerHTML = filtrados.length
+    ? filtrados.map(function(l){
+        var cat = CATS.find(function(c){ return c.nome===l.categoria; })||CATS[0];
+        return '<div class="list-item">' +
+          '<div class="list-icon" style="background:' + cat.bg + '"><i class="ti ' + cat.icon + '" style="color:' + cat.cor + '"></i></div>' +
+          '<div class="list-info"><div class="list-name">' + l.desc + '</div>' +
+          '<div class="list-meta">' + dataFmt(l.data) + ' · ' + l.categoria + (l.pagamento?' · '+l.pagamento:'') + (l.obs?' · '+l.obs:'') + '</div></div>' +
+          '<div class="list-val" style="color:var(--red)">' + brl(l.valor) + '</div>' +
+          '<button class="del-btn" onclick="delLanc(\'' + l.id + '\')"><i class="ti ti-trash"></i></button>' +
+        '</div>';
+      }).join('')
+    : '<div class="empty"><i class="ti ti-filter"></i><br>Nenhum lançamento correspondente.</div>';
+}
+
+function exportarSaidasCSV() {
+  var mesAt = getMesAtual();
+  var lancsDoMes = lancamentos.filter(function(l){ return l.data && l.data.indexOf(mesAt.m) === 0; })
+    .sort(function(a,b){ return a.data.localeCompare(b.data); });
+
+  if (!lancsDoMes.length) {
+    showToast('Nenhum lançamento para exportar neste mês.', 'err');
+    return;
+  }
+
+  var csvContent = 'Data,Descrição,Categoria,Valor,Pagamento,Observações\n';
+  lancsDoMes.forEach(function(l) {
+    var data = dataFmt(l.data);
+    var desc = '"' + l.desc.replace(/"/g, '""') + '"';
+    var cat = l.categoria || '';
+    var val = l.valor.toFixed(2);
+    var pag = l.pagamento || '';
+    var obs = '"' + (l.obs || '').replace(/"/g, '""') + '"';
+    csvContent += [data, desc, cat, val, pag, obs].join(',') + '\n';
+  });
+
+  var blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', 'despesas-' + mesAt.label.toLowerCase() + '-' + mesAt.ano + '.csv');
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast('Planilha CSV exportada!');
 }
 
 // ============================================================
@@ -710,35 +931,111 @@ function renderMetas() {
 // RENDER: BEBIDAS
 // ============================================================
 function renderBebidas() {
-  var total = bebidas.reduce(function(s,b){ return s+b.valor; }, 0);
-  var qtd   = bebidas.reduce(function(s,b){ return s+b.qtd; }, 0);
-  var rank  = {};
-  bebidas.forEach(function(b){ rank[b.produto]=(rank[b.produto]||0)+b.qtd; });
-  var rankArr = Object.entries(rank).sort(function(a,b){ return b[1]-a[1]; }).slice(0,5);
-  var maxR = rankArr[0]?rankArr[0][1]:1;
-  var sorted = bebidas.slice().sort(function(a,b){ return b.data.localeCompare(a.data); });
+  // 1) Agrupar compras por produto para custo médio e estoque total comprado
+  var comprasPorProd = {};
+  bebidas.forEach(function(b) {
+    var p = b.produto;
+    if (!comprasPorProd[p]) comprasPorProd[p] = { totalVal: 0, totalQtd: 0 };
+    comprasPorProd[p].totalVal += b.valor;
+    comprasPorProd[p].totalQtd += b.qtd;
+  });
 
-  var rankHtml = rankArr.length ? '<div class="card"><div class="card-title">Mais comprados</div>' +
-    rankArr.map(function(e){
-      return '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px"><span>' + e[0] + '</span><span style="color:var(--text2)">' + e[1] + ' un.</span></div>' +
-        '<div class="prog-wrap"><div class="prog-bar" style="width:' + Math.round(e[1]/maxR*100) + '%;background:var(--gold)"></div></div></div>';
-    }).join('') + '</div>' : '';
+  // 2) Agrupar vendas por produto
+  var vendasPorProd = {};
+  bebidasVendas.forEach(function(v) {
+    var p = v.produto;
+    vendasPorProd[p] = (vendasPorProd[p] || 0) + v.qtd;
+  });
 
-  var listaHtml = sorted.length ? sorted.map(function(b){
-    return '<div class="list-item">' +
-      '<div class="list-icon" style="background:rgba(127,119,221,0.15)"><i class="ti ti-beer" style="color:#AFA9EC"></i></div>' +
-      '<div class="list-info"><div class="list-name">' + b.produto + '</div><div class="list-meta">' + b.fornecedor + ' · ' + dataFmt(b.data) + ' · ' + b.qtd + ' un. · ' + brl(b.valor) + '</div></div>' +
-      '<button class="del-btn" onclick="delBebida(\'' + b.id + '\')"><i class="ti ti-trash"></i></button>' +
+  // 3) Calcular estoque atual e custo médio de cada produto
+  var estoque = {};
+  var custoMedio = {};
+  Object.keys(comprasPorProd).forEach(function(p) {
+    var totalQ = comprasPorProd[p].totalQtd;
+    var totalV = comprasPorProd[p].totalVal;
+    custoMedio[p] = totalQ > 0 ? (totalV / totalQ) : 0;
+    var vendidas = vendasPorProd[p] || 0;
+    estoque[p] = Math.max(0, totalQ - vendidas);
+  });
+
+  // 4) Métricas financeiras
+  var totalCompras = bebidas.reduce(function(s,b){ return s+b.valor; }, 0);
+  var totalVendas = bebidasVendas.reduce(function(s,v){ return s+v.valor; }, 0);
+  var lucroEstimado = bebidasVendas.reduce(function(s, v) {
+    var cMed = custoMedio[v.produto] || 0;
+    return s + (v.valor - (v.qtd * cMed));
+  }, 0);
+
+  // 5) Renderizar estoque
+  var estoqueRows = Object.keys(comprasPorProd).map(function(p) {
+    var est = estoque[p];
+    var cMed = custoMedio[p];
+    var estCor = est === 0 ? 'var(--red)' : est <= 5 ? 'var(--amber)' : 'var(--green)';
+    return '<div class="row">' +
+      '<div class="row-label"><div>' + p + '</div><div class="row-sub">custo médio: ' + brl(cMed) + '</div></div>' +
+      '<div class="row-val" style="color:' + estCor + '">' + est + ' un</div>' +
     '</div>';
-  }).join('') : '<div class="empty"><i class="ti ti-beer"></i><br>Nenhuma compra registrada.</div>';
+  }).join('');
+  
+  var estoqueHtml = estoqueRows ? '<div class="card"><div class="card-title">Estoque Atual</div>' + estoqueRows + '</div>' : '';
+
+  // 6) Histórico combinado de compras e vendas
+  var histCompras = bebidas.map(function(b) {
+    return {
+      id: b.id,
+      data: b.data,
+      desc: b.produto,
+      sub: 'Compra · ' + b.fornecedor + ' · ' + b.qtd + ' un · custo ' + brl(b.valor / b.qtd) + '/un',
+      valor: b.valor,
+      tipo: 'compra'
+    };
+  });
+
+  var histVendas = bebidasVendas.map(function(v) {
+    return {
+      id: v.id,
+      data: v.data,
+      desc: v.produto,
+      sub: 'Venda · ' + v.qtd + ' un · preço ' + brl(v.valor / v.qtd) + '/un',
+      valor: v.valor,
+      tipo: 'venda'
+    };
+  });
+
+  var histCombinado = histCompras.concat(histVendas).sort(function(a, b) {
+    return b.data.localeCompare(a.data);
+  });
+
+  var listHtml = histCombinado.length ? histCombinado.map(function(h) {
+    var ehVenda = h.tipo === 'venda';
+    var cor = ehVenda ? 'var(--green)' : 'var(--red)';
+    var bgIco = ehVenda ? 'rgba(76,175,125,0.12)' : 'rgba(224,85,85,0.12)';
+    var icone = ehVenda ? 'ti-arrow-down-circle' : 'ti-arrow-up-circle';
+    var sinal = ehVenda ? '+' : '−';
+    var fnDel = ehVenda ? 'delVendaBebida' : 'delBebida';
+    return '<div class="list-item">' +
+      '<div class="list-icon" style="background:' + bgIco + '"><i class="ti ' + icone + '" style="color:' + cor + '"></i></div>' +
+      '<div class="list-info"><div class="list-name">' + h.desc + '</div><div class="list-meta">' + dataFmt(h.data) + ' · ' + h.sub + '</div></div>' +
+      '<div class="list-val" style="color:' + cor + '">' + sinal + ' ' + brl(h.valor) + '</div>' +
+      '<button class="del-btn" onclick="' + fnDel + '(\'' + h.id + '\')"><i class="ti ti-trash"></i></button>' +
+    '</div>';
+  }).join('') : '<div class="empty"><i class="ti ti-beer"></i><br>Nenhuma movimentação registrada.</div>';
 
   document.getElementById('sec-bebidas').innerHTML =
-    '<div class="sec-header"><div class="sec-title">Bebidas</div><button class="btn-add" onclick="openModal(\'modal-bev\')"><i class="ti ti-plus"></i> Registrar</button></div>' +
+    '<div class="sec-header">' +
+      '<div class="sec-title">Bebidas</div>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="btn-add" onclick="openModal(\'modal-bev\')"><i class="ti ti-plus"></i> Compra</button>' +
+        '<button class="btn-add" onclick="abrirBevVendaModal()"><i class="ti ti-cash"></i> Venda</button>' +
+      '</div>' +
+    '</div>' +
     '<div class="metrics">' +
-      '<div class="mcard"><div class="mcard-label">Total investido</div><div class="mcard-val val-amber">' + brl(total) + '</div><div class="mcard-sub">' + bebidas.length + ' compras</div></div>' +
-      '<div class="mcard"><div class="mcard-label">Unidades</div><div class="mcard-val">' + qtd + '</div><div class="mcard-sub">no período</div></div>' +
-    '</div>' + rankHtml +
-    '<div class="card"><div class="card-title">Histórico de compras</div>' + listaHtml + '</div>';
+      '<div class="mcard"><div class="mcard-label">Investido (Compras)</div><div class="mcard-val val-red">' + brl(totalCompras) + '</div><div class="mcard-sub">' + bebidas.length + ' compras</div></div>' +
+      '<div class="mcard"><div class="mcard-label">Faturado (Vendas)</div><div class="mcard-val val-green">' + brl(totalVendas) + '</div><div class="mcard-sub">' + bebidasVendas.length + ' vendas</div></div>' +
+      '<div class="mcard" style="grid-column: 1 / -1"><div class="mcard-label">Lucro Líquido Estimado</div><div class="mcard-val val-gold">' + brl(lucroEstimado) + '</div><div class="mcard-sub">considerando o custo médio unitário</div></div>' +
+    '</div>' +
+    estoqueHtml +
+    '<div class="card"><div class="card-title">Movimentações de Bebidas</div>' + listHtml + '</div>';
 }
 
 // ============================================================
@@ -1093,6 +1390,75 @@ async function salvarBebida() {
 }
 async function delBebida(id) { await fbRemove('bebidas/'+id); showToast('Registro removido.'); }
 
+function abrirBevVendaModal() {
+  var select = document.getElementById('bv-prod');
+  if (!select) return;
+  var prods = Array.from(new Set(bebidas.map(function(b){ return b.produto; })));
+  if (!prods.length) {
+    showToast('Registre alguma compra de bebida primeiro!', 'err');
+    return;
+  }
+  select.innerHTML = prods.map(function(p){ return '<option value="' + p + '">' + p + '</option>'; }).join('');
+  document.getElementById('bv-qtd').value = '1';
+  document.getElementById('bv-val').value = '';
+  document.getElementById('bv-data').value = hoje();
+  sugerirPrecoVenda();
+  openModal('modal-bev-venda');
+}
+
+function sugerirPrecoVenda() {
+  var prod = document.getElementById('bv-prod').value;
+  if (!prod) return;
+  var comprasProd = bebidas.filter(function(b){ return b.produto === prod; });
+  var totalVal = comprasProd.reduce(function(s,b){ return s+b.valor; }, 0);
+  var totalQtd = comprasProd.reduce(function(s,b){ return s+b.qtd; }, 0);
+  var custoUni = totalQtd > 0 ? (totalVal / totalQtd) : 0;
+  var precoSug = Math.ceil(custoUni * 2);
+  var qtd = parseInt(document.getElementById('bv-qtd').value)||1;
+  document.getElementById('bv-val').value = (precoSug * qtd).toFixed(2);
+}
+
+function calcVendaTotalPreview() {
+  var prod = document.getElementById('bv-prod').value;
+  var qtd = parseInt(document.getElementById('bv-qtd').value)||1;
+  var comprasProd = bebidas.filter(function(b){ return b.produto === prod; });
+  var totalVal = comprasProd.reduce(function(s,b){ return s+b.valor; }, 0);
+  var totalQtd = comprasProd.reduce(function(s,b){ return s+b.qtd; }, 0);
+  var custoUni = totalQtd > 0 ? (totalVal / totalQtd) : 0;
+  var precoSug = Math.ceil(custoUni * 2);
+  document.getElementById('bv-val').value = (precoSug * qtd).toFixed(2);
+}
+
+async function salvarVendaBebida() {
+  var prod = document.getElementById('bv-prod').value;
+  var qtd  = parseInt(document.getElementById('bv-qtd').value);
+  var val  = parseFloat(document.getElementById('bv-val').value);
+  var data = document.getElementById('bv-data').value;
+  if (!prod||!qtd||!val||!data) { showToast('Preencha todos os campos','err'); return; }
+  
+  var comprasProd = bebidas.filter(function(b){ return b.produto === prod; });
+  var totalComprado = comprasProd.reduce(function(s,b){ return s+b.qtd; }, 0);
+  var vendasProd = bebidasVendas.filter(function(v){ return v.produto === prod; });
+  var totalVendido = vendasProd.reduce(function(s,v){ return s+v.qtd; }, 0);
+  var estoqueAtual = totalComprado - totalVendido;
+  
+  if (qtd > estoqueAtual) {
+    showToast('Estoque insuficiente! Saldo atual: ' + estoqueAtual + ' un.', 'err');
+    return;
+  }
+  
+  try {
+    await fbPush('bebidas_vendas', { produto:prod, qtd:qtd, valor:val, data:data });
+    closeModal('modal-bev-venda');
+    showToast('Venda de bebida registrada!');
+  } catch(e) { showToast('Erro ao salvar venda.','err'); }
+}
+
+async function delVendaBebida(id) {
+  await fbRemove('bebidas_vendas/'+id);
+  showToast('Venda de bebida removida.');
+}
+
 // ============================================================
 // UI: SELETORES
 // ============================================================
@@ -1267,16 +1633,159 @@ function exportarFechamento() {
 }
 
 // ============================================================
+// PIN LOCK SCREEN SECURITY SYSTEM
+// ============================================================
+let typedPin = '';
+let isLocked = false;
+
+function iniciarPinCheck() {
+  var pin = localStorage.getItem('heloisa_mazzi_pin');
+  if (pin) {
+    bloquearApp();
+  } else {
+    var btn = document.getElementById('btn-pin-lock');
+    if (btn) btn.querySelector('i').className = 'ti ti-lock-open';
+  }
+}
+
+function bloquearApp() {
+  var pin = localStorage.getItem('heloisa_mazzi_pin');
+  if (!pin) return; // Só bloqueia se houver PIN configurado
+  isLocked = true;
+  typedPin = '';
+  atualizarPinDots();
+  var msg = document.getElementById('pin-screen-msg');
+  if (msg) {
+    msg.textContent = 'Insira seu PIN de segurança';
+    msg.style.color = 'var(--text2)';
+  }
+  var screen = document.getElementById('pin-lock-screen');
+  if (screen) screen.style.display = 'flex';
+  
+  var appEl = document.getElementById('app');
+  if (appEl) appEl.style.filter = 'blur(10px)';
+  
+  var btn = document.getElementById('btn-pin-lock');
+  if (btn) btn.querySelector('i').className = 'ti ti-lock';
+}
+
+function desbloquearApp() {
+  isLocked = false;
+  typedPin = '';
+  var screen = document.getElementById('pin-lock-screen');
+  if (screen) screen.style.display = 'none';
+  
+  var appEl = document.getElementById('app');
+  if (appEl) appEl.style.filter = 'none';
+  
+  var btn = document.getElementById('btn-pin-lock');
+  if (btn) btn.querySelector('i').className = 'ti ti-lock-open';
+}
+
+function pressPinKey(k) {
+  if (!isLocked) return;
+  if (k === 'back') {
+    if (typedPin.length > 0) typedPin = typedPin.slice(0, -1);
+  } else {
+    if (typedPin.length < 4) typedPin += k;
+  }
+  atualizarPinDots();
+
+  if (typedPin.length === 4) {
+    var pinSalvo = localStorage.getItem('heloisa_mazzi_pin');
+    if (typedPin === pinSalvo) {
+      desbloquearApp();
+    } else {
+      typedPin = '';
+      setTimeout(function() {
+        atualizarPinDots();
+        var msg = document.getElementById('pin-screen-msg');
+        if (msg) {
+          msg.textContent = 'PIN incorreto! Tente novamente.';
+          msg.style.color = 'var(--red)';
+        }
+      }, 150);
+    }
+  }
+}
+
+function atualizarPinDots() {
+  var dots = document.querySelectorAll('.pin-dot');
+  dots.forEach(function(dot, i) {
+    dot.classList.toggle('active', i < typedPin.length);
+  });
+}
+
+function abrirConfiguracaoPin() {
+  var pin = localStorage.getItem('heloisa_mazzi_pin');
+  if (pin) {
+    document.getElementById('pin-setup-create').style.display = 'none';
+    document.getElementById('pin-setup-remove').style.display = 'block';
+    document.getElementById('p-curr-pin').value = '';
+  } else {
+    document.getElementById('pin-setup-create').style.display = 'block';
+    document.getElementById('pin-setup-remove').style.display = 'none';
+    document.getElementById('p-new-pin').value = '';
+    document.getElementById('p-new-pin-conf').value = '';
+  }
+  openModal('modal-pin-setup');
+}
+
+async function salvarNovoPin() {
+  var pin1 = document.getElementById('p-new-pin').value.trim();
+  var pin2 = document.getElementById('p-new-pin-conf').value.trim();
+
+  if (pin1.length !== 4 || isNaN(pin1)) {
+    showToast('O PIN deve conter exatamente 4 números.', 'err');
+    return;
+  }
+  if (pin1 !== pin2) {
+    showToast('Os PINs digitados não são iguais.', 'err');
+    return;
+  }
+
+  localStorage.setItem('heloisa_mazzi_pin', pin1);
+  closeModal('modal-pin-setup');
+  showToast('PIN de segurança ativado!');
+  var btn = document.getElementById('btn-pin-lock');
+  if (btn) btn.querySelector('i').className = 'ti ti-lock-open';
+}
+
+async function removerPin() {
+  var pinDigitado = document.getElementById('p-curr-pin').value.trim();
+  var pinSalvo = localStorage.getItem('heloisa_mazzi_pin');
+
+  if (pinDigitado !== pinSalvo) {
+    showToast('PIN incorreto.', 'err');
+    return;
+  }
+
+  localStorage.removeItem('heloisa_mazzi_pin');
+  closeModal('modal-pin-setup');
+  showToast('PIN desativado!');
+  var btn = document.getElementById('btn-pin-lock');
+  if (btn) btn.querySelector('i').className = 'ti ti-lock-open';
+}
+
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden) {
+    var pin = localStorage.getItem('heloisa_mazzi_pin');
+    if (pin) bloquearApp();
+  }
+});
+
+// ============================================================
 // INIT
 // ============================================================
 window.addEventListener('DOMContentLoaded', async function() {
   await registrarSW();
   setTimeout(async function() {
     document.getElementById('loading-screen').style.display = 'none';
+    iniciarPinCheck();
     document.getElementById('main').style.display = 'block';
     initCatGrid();
     var h = hoje();
-    ['l-data','d-data','b-data'].forEach(function(id){
+    ['l-data','d-data','b-data','bv-data'].forEach(function(id){
       var el = document.getElementById(id); if (el) el.value = h;
     });
     initHistorico();
