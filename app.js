@@ -70,6 +70,7 @@ let faturamentoDiario = [];
 let currentTab = 'painel';
 let histIdx = -1;
 let filtroMesSaidas = '';
+let filtroMesAlertas = '';
 let catSel = 0;
 let pagSel = 'Pix';
 let editingVencId = null;
@@ -660,6 +661,24 @@ function navHistSaidas(dir) {
   renderMes();
 }
 
+function navHistAlertas(dir) {
+  var list = getSaidasMonths();
+  if (!filtroMesAlertas) filtroMesAlertas = getMesAtual().m;
+  var idx = list.indexOf(filtroMesAlertas);
+  if (idx === -1) idx = list.length - 1;
+
+  if (dir < 0) {
+    if (idx > 0) {
+      filtroMesAlertas = list[idx - 1];
+    }
+  } else {
+    if (idx < list.length - 1) {
+      filtroMesAlertas = list[idx + 1];
+    }
+  }
+  renderAlertas();
+}
+
 function abrirNovaSaidaModal() {
   var mesAt = getMesAtual();
   var h = hoje();
@@ -854,12 +873,30 @@ function exportarSaidasCSV() {
 // RENDER: ALERTAS (vencimentos dinâmicos)
 // ============================================================
 function renderAlertas() {
-  var mesAt = getMesAtual();
+  if (!filtroMesAlertas) {
+    filtroMesAlertas = getMesAtual().m;
+  }
+  var mesKey = filtroMesAlertas;
+  
+  var mesSel = HIST.find(function(h){ return h.m === mesKey; });
+  if (!mesSel) {
+    var mesAt = getMesAtual();
+    if (mesKey === mesAt.m) {
+      mesSel = { m: mesAt.m, label: mesAt.label, ano: mesAt.ano, mesNum: mesAt.mesNum };
+    } else {
+      var parts = mesKey.split('-');
+      var mNum = parseInt(parts[1]) - 1;
+      mesSel = { m: mesKey, label: MESES_LABEL[mNum], ano: parts[0], mesNum: mNum + 1 };
+    }
+  } else {
+    mesSel = { m: mesSel.m, label: mesSel.label, ano: mesSel.m.slice(0, 4), mesNum: parseInt(mesSel.m.slice(5, 7)) };
+  }
+
+  var isCurrent = mesKey === getMesAtual().m;
   var agora = new Date();
-  var mesKey = mesAt.m;
 
   var vencComDiff = VENCIMENTOS_FB.map(function(v){
-    var vd = new Date(mesAt.ano, mesAt.mesNum-1, v.dia);
+    var vd = new Date(parseInt(mesSel.ano), mesSel.mesNum-1, v.dia);
     var diff = Math.round((vd-agora)/86400000);
     return Object.assign({},v,{diff:diff, pago:vencPago(v, mesKey)});
   }).sort(function(a,b){ return a.diff-b.diff; });
@@ -872,10 +909,26 @@ function renderAlertas() {
     return '<button class="pay-btn" onclick="marcarPago(\'' + v.id + '\')" title="Marcar como pago"><i class="ti ti-cash"></i> Pagar</button>';
   }
 
-  // Só entram em "urgentes/próximos" os que ainda NÃO foram pagos
-  var urgentes = vencComDiff.filter(function(v){ return !v.pago && v.diff>=0&&v.diff<=2; });
-  var proximos = vencComDiff.filter(function(v){ return !v.pago && v.diff>2&&v.diff<=10; });
-  var html = '';
+  // Só entram em "urgentes/próximos" os que ainda NÃO foram pagos (somente no mês atual)
+  var urgentes = isCurrent ? vencComDiff.filter(function(v){ return !v.pago && v.diff>=0&&v.diff<=2; }) : [];
+  var proximos = isCurrent ? vencComDiff.filter(function(v){ return !v.pago && v.diff>2&&v.diff<=10; }) : [];
+  
+  // Configurar barra de navegação temporal para os alertas
+  var list = getSaidasMonths();
+  var idx = list.indexOf(mesKey);
+  if (idx === -1) idx = list.length - 1;
+  var canPrev = idx > 0;
+  var canNext = idx < list.length - 1;
+  var navLabel = mesSel.label + '/' + mesSel.ano + (isCurrent ? ' <span style="font-size:10px;color:var(--text3)">(atual)</span>' : '');
+
+  var navHtml = 
+    '<div class="nav-mes" style="margin-bottom:14px">' +
+      '<button class="nav-mes-btn" onclick="navHistAlertas(-1)"' + (!canPrev?' disabled':'') + '><i class="ti ti-chevron-left"></i></button>' +
+      '<span class="nav-mes-label">' + navLabel + '</span>' +
+      '<button class="nav-mes-btn" onclick="navHistAlertas(1)"' + (!canNext?' disabled':'') + '><i class="ti ti-chevron-right"></i></button>' +
+    '</div>';
+
+  var html = navHtml;
 
   if ('Notification' in window && Notification.permission !== 'granted') {
     html += '<div class="alert alert-amber" onclick="solicitarPermissao()" style="cursor:pointer;margin-bottom:12px">' +
@@ -915,11 +968,12 @@ function renderAlertas() {
     html += '</div>';
   }
 
-  html += '<div class="card"><div class="card-title">Calendário — ' + mesAt.label + '/' + mesAt.ano + '</div>';
+  html += '<div class="card"><div class="card-title">' + (isCurrent ? 'Calendário' : 'Vencimentos') + ' — ' + mesSel.label + '/' + mesSel.ano + '</div>';
   if (vencComDiff.length) {
     vencComDiff.forEach(function(v){
-      var passado = v.diff < 0;
-      var corDot = v.pago?'var(--green)':passado?'var(--text3)':v.diff<=2?'var(--red)':v.diff<=10?'var(--amber)':'var(--green)';
+      var passado = isCurrent && v.diff < 0;
+      var corDot = v.pago ? 'var(--green)' : (isCurrent ? (passado ? 'var(--text3)' : v.diff<=2 ? 'var(--red)' : v.diff<=10 ? 'var(--amber)' : 'var(--green)') : 'var(--red)');
+      
       html += '<div class="row" style="' + (passado&&!v.pago?'opacity:0.4':'') + '">' +
         '<div class="dot" style="background:' + corDot + ';width:8px;height:8px;flex-shrink:0"></div>' +
         '<div class="row-label" style="flex:1"><div>' + v.nome + (v.pago?' <span class="pill pill-green">pago</span>':'') + (v.encerra?' ★':'') + '</div><div class="row-sub">dia ' + v.dia + ' · ' + tipoLabel(v) + '</div></div>' +
@@ -942,7 +996,7 @@ function renderAlertas() {
     '<span>Pago: <strong style="color:var(--green)">' + brl(totalPago) + '</strong> · Falta: <strong style="color:var(--amber)">' + brl(totalFalta) + '</strong></span></div>';
   html += '<button class="btn-primary" onclick="abrirNovoVencimento()" style="margin-bottom:8px"><i class="ti ti-plus"></i> Adicionar vencimento</button>';
 
-  if (VENCIMENTOS_FB.some(function(v){ return v.encerra; })) {
+  if (mesKey === '2026-07' && VENCIMENTOS_FB.some(function(v){ return v.encerra; })) {
     html += '<div class="alert alert-green"><i class="ti ti-confetti"></i><div>' +
       '<div class="alert-title">Papo de Barbeira encerra este mês!</div>' +
       '<div class="alert-sub">Última parcela R$ 99,00. A partir de agosto R$ 552,93/mês liberados.</div>' +
