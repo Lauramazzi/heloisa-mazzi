@@ -69,6 +69,7 @@ let faturamentoDiario = [];
 
 let currentTab = 'painel';
 let histIdx = -1;
+let filtroMesSaidas = '';
 let catSel = 0;
 let pagSel = 'Pix';
 let editingVencId = null;
@@ -479,7 +480,9 @@ function renderPainel() {
       '<div class="prog-wrap" style="height:7px"><div class="prog-bar" style="width:' + pctRes + '%;background:var(--green)"></div></div>' +
     '</div>' +
     (insightsHtml ? '<div class="card"><div class="card-title">Insights</div>' + insightsHtml + '</div>' : '') +
-    (isCurrent ? '<button class="btn-primary" onclick="abrirFechamento()" style="margin-bottom:8px"><i class="ti ti-calendar-check"></i> Fechar mês — ' + mesAt.label + '/' + mesAt.ano + '</button>' : '') +
+    (isCurrent 
+      ? '<button class="btn-primary" onclick="abrirFechamento()" style="margin-bottom:8px"><i class="ti ti-calendar-check"></i> Fechar mês — ' + mesAt.label + '/' + mesAt.ano + '</button>' 
+      : '<button class="btn-primary" onclick="abrirEdicaoFechamento()" style="margin-bottom:8px"><i class="ti ti-edit"></i> Editar Fechamento — ' + showData.label + '</button>') +
     (showData ? '<button class="btn-secondary" onclick="exportarFechamento()" style="margin-bottom:8px"><i class="ti ti-file-export"></i> Exportar relatório — ' + (isCurrent?mesAt.label:showData.label) + '</button>' : '');
 
   // Renderizar gráficos após carregar o HTML
@@ -627,12 +630,70 @@ function renderCharts(filtroMes, totalSaidas, lancsDoMes, dadosMes) {
 }
 
 
+// ============================================================// ============================================================
+// TEMPORAL NAVIGATION: SAÍDAS
+// ============================================================
+function getSaidasMonths() {
+  var list = HIST.map(function(h){ return h.m; });
+  var mesAt = getMesAtual();
+  if (list.indexOf(mesAt.m) === -1) {
+    list.push(mesAt.m);
+  }
+  return list.sort();
+}
+
+function navHistSaidas(dir) {
+  var list = getSaidasMonths();
+  if (!filtroMesSaidas) filtroMesSaidas = getMesAtual().m;
+  var idx = list.indexOf(filtroMesSaidas);
+  if (idx === -1) idx = list.length - 1;
+
+  if (dir < 0) {
+    if (idx > 0) {
+      filtroMesSaidas = list[idx - 1];
+    }
+  } else {
+    if (idx < list.length - 1) {
+      filtroMesSaidas = list[idx + 1];
+    }
+  }
+  renderMes();
+}
+
+function abrirNovaSaidaModal() {
+  var mesAt = getMesAtual();
+  var h = hoje();
+  if (filtroMesSaidas && filtroMesSaidas !== mesAt.m) {
+    document.getElementById('l-data').value = filtroMesSaidas + '-01';
+  } else {
+    document.getElementById('l-data').value = h;
+  }
+  openModal('modal-lanc');
+}
+
 // ============================================================
 // RENDER: MÊS ATUAL (saídas)
 // ============================================================
 function renderMes() {
-  var mesAt = getMesAtual();
-  var lancsDoMes = lancamentos.filter(function(l){ return l.data && l.data.indexOf(mesAt.m) === 0; })
+  if (!filtroMesSaidas) {
+    filtroMesSaidas = getMesAtual().m;
+  }
+  
+  var mesSel = HIST.find(function(h){ return h.m === filtroMesSaidas; });
+  if (!mesSel) {
+    var mesAt = getMesAtual();
+    if (filtroMesSaidas === mesAt.m) {
+      mesSel = { m: mesAt.m, label: mesAt.label, ano: mesAt.ano };
+    } else {
+      var parts = filtroMesSaidas.split('-');
+      var mNum = parseInt(parts[1]) - 1;
+      mesSel = { m: filtroMesSaidas, label: MESES_LABEL[mNum], ano: parts[0] };
+    }
+  } else {
+    mesSel = { m: mesSel.m, label: mesSel.label, ano: mesSel.m.slice(0, 4) };
+  }
+
+  var lancsDoMes = lancamentos.filter(function(l){ return l.data && l.data.indexOf(filtroMesSaidas) === 0; })
     .sort(function(a,b){ return b.data.localeCompare(a.data); });
   var total = lancsDoMes.reduce(function(s,l){ return s + l.valor; }, 0);
   var barb  = lancsDoMes.filter(function(l){ return l.conta === 'Barbearia'; }).reduce(function(s,l){ return s + l.valor; }, 0);
@@ -660,16 +721,33 @@ function renderMes() {
   if (catSelect) catVal = catSelect.value;
 
   var modalTitle = document.querySelector('#modal-lanc .modal-title');
-  if (modalTitle) modalTitle.textContent = 'Nova saída — ' + mesAt.label + '/' + mesAt.ano;
+  if (modalTitle) modalTitle.textContent = 'Nova saída — ' + mesSel.label + '/' + mesSel.ano;
 
   var catOptions = CATS.map(function(c){
     return '<option value="' + c.nome + '">' + c.nome + '</option>';
   }).join('');
 
+  // Configurar barra de navegação temporal para as saídas
+  var list = getSaidasMonths();
+  var idx = list.indexOf(filtroMesSaidas);
+  if (idx === -1) idx = list.length - 1;
+  var canPrev = idx > 0;
+  var canNext = idx < list.length - 1;
+  var isCurrent = filtroMesSaidas === getMesAtual().m;
+  var navLabel = mesSel.label + '/' + mesSel.ano + (isCurrent ? ' <span style="font-size:10px;color:var(--text3)">(atual)</span>' : '');
+
+  var navHtml = 
+    '<div class="nav-mes" style="margin-bottom:14px">' +
+      '<button class="nav-mes-btn" onclick="navHistSaidas(-1)"' + (!canPrev?' disabled':'') + '><i class="ti ti-chevron-left"></i></button>' +
+      '<span class="nav-mes-label">' + navLabel + '</span>' +
+      '<button class="nav-mes-btn" onclick="navHistSaidas(1)"' + (!canNext?' disabled':'') + '><i class="ti ti-chevron-right"></i></button>' +
+    '</div>';
+
   document.getElementById('sec-junho').innerHTML =
+    navHtml +
     '<div class="sec-header">' +
-      '<div class="sec-title">' + mesAt.label + ' / ' + mesAt.ano + '</div>' +
-      '<button class="btn-add" onclick="openModal(\'modal-lanc\')"><i class="ti ti-plus"></i> Nova saída</button>' +
+      '<div class="sec-title">Saídas de ' + mesSel.label + '</div>' +
+      '<button class="btn-add" onclick="abrirNovaSaidaModal()"><i class="ti ti-plus"></i> Nova saída</button>' +
     '</div>' +
     '<div class="metrics">' +
       '<div class="mcard"><div class="mcard-label">Total saídas</div><div class="mcard-val ' + (total>0?'val-red':'') + '">' + (total>0?brl(total):'—') + '</div><div class="mcard-sub">' + lancsDoMes.length + ' lançamentos</div></div>' +
@@ -693,16 +771,15 @@ function renderMes() {
   var newCatSelect = document.getElementById('s-filtro-cat');
   if (newBuscaInput) newBuscaInput.value = buscaVal;
   if (newCatSelect) newCatSelect.value = catVal;
-
   atualizarListaFiltrada();
 }
 
 function atualizarListaFiltrada() {
-  var mesAt = getMesAtual();
+  var mesM = filtroMesSaidas || getMesAtual().m;
   var query = (document.getElementById('s-busca')?.value || '').toLowerCase().trim();
   var catFilter = document.getElementById('s-filtro-cat')?.value || '';
 
-  var lancsDoMes = lancamentos.filter(function(l){ return l.data && l.data.indexOf(mesAt.m) === 0; })
+  var lancsDoMes = lancamentos.filter(function(l){ return l.data && l.data.indexOf(mesM) === 0; })
     .sort(function(a,b){ return b.data.localeCompare(a.data); });
 
   var filtrados = lancsDoMes.filter(function(l) {
@@ -729,8 +806,21 @@ function atualizarListaFiltrada() {
 }
 
 function exportarSaidasCSV() {
-  var mesAt = getMesAtual();
-  var lancsDoMes = lancamentos.filter(function(l){ return l.data && l.data.indexOf(mesAt.m) === 0; })
+  var mesM = filtroMesSaidas || getMesAtual().m;
+  
+  var mesSel = HIST.find(function(h){ return h.m === mesM; });
+  var label = '';
+  var ano = '';
+  if (mesSel) {
+    label = mesSel.label;
+    ano = mesSel.m.slice(0, 4);
+  } else {
+    var mesAt = getMesAtual();
+    label = mesAt.label;
+    ano = mesAt.ano;
+  }
+
+  var lancsDoMes = lancamentos.filter(function(l){ return l.data && l.data.indexOf(mesM) === 0; })
     .sort(function(a,b){ return a.data.localeCompare(b.data); });
 
   if (!lancsDoMes.length) {
@@ -753,7 +843,7 @@ function exportarSaidasCSV() {
   var url = URL.createObjectURL(blob);
   var link = document.createElement('a');
   link.setAttribute('href', url);
-  link.setAttribute('download', 'despesas-' + mesAt.label.toLowerCase() + '-' + mesAt.ano + '.csv');
+  link.setAttribute('download', 'despesas-' + label.toLowerCase() + '-' + ano + '.csv');
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1098,7 +1188,13 @@ async function salvarLanc() {
     await fbPush('lancamentos', { desc:desc, valor:val, data:data, categoria:cat.nome, conta:cat.nome==='Pessoal'?'Pessoal':'Barbearia', pagamento:pagSel, obs:document.getElementById('l-obs').value.trim() });
     closeModal('modal-lanc');
     ['l-desc','l-val','l-obs'].forEach(function(id){ document.getElementById(id).value=''; });
-    document.getElementById('l-data').value = hoje();
+    var h = hoje();
+    var mesAt = getMesAtual();
+    if (filtroMesSaidas && filtroMesSaidas !== mesAt.m) {
+      document.getElementById('l-data').value = filtroMesSaidas + '-01';
+    } else {
+      document.getElementById('l-data').value = h;
+    }
     showToast('Saída registrada!');
   } catch(e) { showToast('Erro ao salvar.','err'); }
 }
@@ -1121,6 +1217,17 @@ function abrirFechamento() {
   document.getElementById('f-atend').value = totalAtend > 0 ? totalAtend : '';
   document.getElementById('f-ticket-preview').textContent = (totalFat > 0 && totalAtend > 0) ? brl(totalFat / totalAtend) : '—';
   
+  openModal('modal-fechamento');
+}
+
+function abrirEdicaoFechamento() {
+  var viewed = HIST[histIdx];
+  if (!viewed) return;
+  document.getElementById('f-mes').value = viewed.m;
+  document.getElementById('f-mes-label').textContent = viewed.label + ' / ' + viewed.m.slice(0, 4);
+  document.getElementById('f-fat').value = viewed.fat;
+  document.getElementById('f-atend').value = viewed.atend;
+  calcTicketPreview();
   openModal('modal-fechamento');
 }
 function calcTicketPreview() {
