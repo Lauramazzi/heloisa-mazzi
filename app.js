@@ -82,6 +82,16 @@ function brl(v) {
 function hoje() { return new Date().toISOString().split('T')[0]; }
 function dataFmt(d) { return d ? d.split('-').reverse().join('/') : ''; }
 
+// Label de tipo: se tiver parcela, mostra "Parcela X/Y" automaticamente
+function tipoLabel(v) {
+  if (v.parcelaTotal) return 'Parcela ' + (v.parcelaAtual || 1) + '/' + v.parcelaTotal;
+  return v.tipo || 'Fixo';
+}
+// Verifica se um vencimento já foi pago no mês informado
+function vencPago(v, mes) {
+  return !!(v.pagamentos && v.pagamentos[mes]);
+}
+
 function fmtMeta(fmt, v) {
   if (fmt === 'brl') return 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
   if (fmt === 'pct') return Number(v).toFixed(1) + '%';
@@ -425,7 +435,8 @@ function renderPainel() {
       '<div class="prog-wrap" style="height:7px"><div class="prog-bar" style="width:' + pctRes + '%;background:var(--green)"></div></div>' +
     '</div>' +
     (insightsHtml ? '<div class="card"><div class="card-title">Insights</div>' + insightsHtml + '</div>' : '') +
-    (isCurrent ? '<button class="btn-primary" onclick="abrirFechamento()" style="margin-bottom:8px"><i class="ti ti-calendar-check"></i> Fechar mês — ' + mesAt.label + '/' + mesAt.ano + '</button>' : '');
+    (isCurrent ? '<button class="btn-primary" onclick="abrirFechamento()" style="margin-bottom:8px"><i class="ti ti-calendar-check"></i> Fechar mês — ' + mesAt.label + '/' + mesAt.ano + '</button>' : '') +
+    (showData ? '<button class="btn-secondary" onclick="exportarFechamento()" style="margin-bottom:8px"><i class="ti ti-file-export"></i> Exportar relatório — ' + (isCurrent?mesAt.label:showData.label) + '</button>' : '');
 }
 
 // ============================================================
@@ -487,15 +498,25 @@ function renderMes() {
 function renderAlertas() {
   var mesAt = getMesAtual();
   var agora = new Date();
+  var mesKey = mesAt.m;
 
   var vencComDiff = VENCIMENTOS_FB.map(function(v){
     var vd = new Date(mesAt.ano, mesAt.mesNum-1, v.dia);
     var diff = Math.round((vd-agora)/86400000);
-    return Object.assign({},v,{diff:diff});
+    return Object.assign({},v,{diff:diff, pago:vencPago(v, mesKey)});
   }).sort(function(a,b){ return a.diff-b.diff; });
 
-  var urgentes = vencComDiff.filter(function(v){ return v.diff>=0&&v.diff<=2; });
-  var proximos = vencComDiff.filter(function(v){ return v.diff>2&&v.diff<=10; });
+  // Botão de pagar/desfazer reutilizável
+  function btnPagar(v) {
+    if (v.pago) {
+      return '<button class="pay-btn pay-btn-done" onclick="desfazerPagamento(\'' + v.id + '\')" title="Desfazer pagamento"><i class="ti ti-circle-check"></i> Pago</button>';
+    }
+    return '<button class="pay-btn" onclick="marcarPago(\'' + v.id + '\')" title="Marcar como pago"><i class="ti ti-cash"></i> Pagar</button>';
+  }
+
+  // Só entram em "urgentes/próximos" os que ainda NÃO foram pagos
+  var urgentes = vencComDiff.filter(function(v){ return !v.pago && v.diff>=0&&v.diff<=2; });
+  var proximos = vencComDiff.filter(function(v){ return !v.pago && v.diff>2&&v.diff<=10; });
   var html = '';
 
   if ('Notification' in window && Notification.permission !== 'granted') {
@@ -512,8 +533,8 @@ function renderAlertas() {
       html += '<div class="alert alert-red">' +
         '<i class="ti ti-bell"></i>' +
         '<div style="flex:1"><div class="alert-title">' + v.nome + (v.encerra?' <span class="pill pill-green">último mês</span>':'') + '</div>' +
-        '<div class="alert-sub">' + label + ' · ' + v.tipo + ' · ' + brl(v.valor) + '</div></div>' +
-        '<div class="venc-actions">' +
+        '<div class="alert-sub">' + label + ' · ' + tipoLabel(v) + ' · ' + brl(v.valor) + '</div></div>' +
+        '<div class="venc-actions">' + btnPagar(v) +
           '<button class="del-btn" onclick="editarVencimento(\'' + v.id + '\')"><i class="ti ti-edit"></i></button>' +
           '<button class="del-btn" onclick="delVencimento(\'' + v.id + '\')"><i class="ti ti-trash"></i></button>' +
         '</div></div>';
@@ -528,7 +549,7 @@ function renderAlertas() {
         '<i class="ti ti-clock"></i>' +
         '<div style="flex:1"><div class="alert-title">' + v.nome + (v.encerra?' <span class="pill pill-green">último mês</span>':'') + '</div>' +
         '<div class="alert-sub">Em ' + v.diff + ' dias · dia ' + v.dia + ' · ' + brl(v.valor) + '</div></div>' +
-        '<div class="venc-actions">' +
+        '<div class="venc-actions">' + btnPagar(v) +
           '<button class="del-btn" onclick="editarVencimento(\'' + v.id + '\')"><i class="ti ti-edit"></i></button>' +
           '<button class="del-btn" onclick="delVencimento(\'' + v.id + '\')"><i class="ti ti-trash"></i></button>' +
         '</div></div>';
@@ -540,12 +561,12 @@ function renderAlertas() {
   if (vencComDiff.length) {
     vencComDiff.forEach(function(v){
       var passado = v.diff < 0;
-      var corDot = passado?'var(--text3)':v.diff<=2?'var(--red)':v.diff<=10?'var(--amber)':'var(--green)';
-      html += '<div class="row" style="' + (passado?'opacity:0.4':'') + '">' +
+      var corDot = v.pago?'var(--green)':passado?'var(--text3)':v.diff<=2?'var(--red)':v.diff<=10?'var(--amber)':'var(--green)';
+      html += '<div class="row" style="' + (passado&&!v.pago?'opacity:0.4':'') + '">' +
         '<div class="dot" style="background:' + corDot + ';width:8px;height:8px;flex-shrink:0"></div>' +
-        '<div class="row-label" style="flex:1"><div>' + v.nome + (v.encerra?' ★':'') + '</div><div class="row-sub">dia ' + v.dia + ' · ' + v.tipo + '</div></div>' +
+        '<div class="row-label" style="flex:1"><div>' + v.nome + (v.pago?' <span class="pill pill-green">pago</span>':'') + (v.encerra?' ★':'') + '</div><div class="row-sub">dia ' + v.dia + ' · ' + tipoLabel(v) + '</div></div>' +
         '<div class="row-val">' + brl(v.valor) + '</div>' +
-        '<div class="venc-actions">' +
+        '<div class="venc-actions">' + btnPagar(v) +
           '<button class="del-btn" onclick="editarVencimento(\'' + v.id + '\')"><i class="ti ti-edit"></i></button>' +
           '<button class="del-btn" onclick="delVencimento(\'' + v.id + '\')"><i class="ti ti-trash"></i></button>' +
         '</div></div>';
@@ -556,8 +577,11 @@ function renderAlertas() {
   html += '</div>';
 
   var totalVenc = VENCIMENTOS_FB.reduce(function(s,v){ return s+v.valor; }, 0);
+  var totalPago = vencComDiff.filter(function(v){ return v.pago; }).reduce(function(s,v){ return s+v.valor; }, 0);
+  var totalFalta = totalVenc - totalPago;
   html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;font-size:12px;color:var(--text2)">' +
-    '<span>Total comprometido/mês: <strong style="color:var(--text)">' + brl(totalVenc) + '</strong></span></div>';
+    '<span>Comprometido/mês: <strong style="color:var(--text)">' + brl(totalVenc) + '</strong></span>' +
+    '<span>Pago: <strong style="color:var(--green)">' + brl(totalPago) + '</strong> · Falta: <strong style="color:var(--amber)">' + brl(totalFalta) + '</strong></span></div>';
   html += '<button class="btn-primary" onclick="abrirNovoVencimento()" style="margin-bottom:8px"><i class="ti ti-plus"></i> Adicionar vencimento</button>';
 
   if (VENCIMENTOS_FB.some(function(v){ return v.encerra; })) {
@@ -779,6 +803,8 @@ function abrirNovoVencimento() {
   document.getElementById('v-tipo').value = 'Fixo';
   document.getElementById('v-aviso').value = '3';
   document.getElementById('v-encerra').checked = false;
+  document.getElementById('v-parc-atual').value = '';
+  document.getElementById('v-parc-total').value = '';
   document.querySelectorAll('.aviso-btn').forEach(function(b){ b.classList.remove('active'); });
   var btn3 = document.querySelector('.aviso-btn[data-aviso="3"]');
   if (btn3) btn3.classList.add('active');
@@ -795,6 +821,8 @@ function editarVencimento(id) {
   document.getElementById('v-tipo').value  = v.tipo||'Fixo';
   document.getElementById('v-aviso').value = v.aviso||'3';
   document.getElementById('v-encerra').checked = !!v.encerra;
+  document.getElementById('v-parc-atual').value = v.parcelaAtual || '';
+  document.getElementById('v-parc-total').value = v.parcelaTotal || '';
   document.querySelectorAll('.aviso-btn').forEach(function(b){ b.classList.remove('active'); });
   var btnA = document.querySelector('.aviso-btn[data-aviso="' + (v.aviso||3) + '"]');
   if (btnA) btnA.classList.add('active');
@@ -807,10 +835,19 @@ async function salvarVencimento() {
   var tipo    = document.getElementById('v-tipo').value.trim()||'Fixo';
   var aviso   = parseInt(document.getElementById('v-aviso').value)||3;
   var encerra = document.getElementById('v-encerra').checked;
+  var pAtual  = parseInt(document.getElementById('v-parc-atual').value);
+  var pTotal  = parseInt(document.getElementById('v-parc-total').value);
   if (!nome||!valor||!dia||dia<1||dia>31) { showToast('Preencha nome, valor e dia (1–31)','err'); return; }
+  if (pTotal && (!pAtual || pAtual < 1 || pAtual > pTotal)) { showToast('Parcela atual deve estar entre 1 e o total','err'); return; }
   var id = editingVencId || nome.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')+'-'+Date.now();
+  var obj = { id:id, nome:nome, valor:valor, dia:dia, tipo:tipo, aviso:aviso, encerra:encerra };
+  // Preserva histórico de pagamentos ao editar
+  var existente = VENCIMENTOS_FB.find(function(x){ return x.id===id; });
+  if (existente && existente.pagamentos) obj.pagamentos = existente.pagamentos;
+  // Campos de parcela (opcionais)
+  if (pTotal) { obj.parcelaAtual = pAtual; obj.parcelaTotal = pTotal; }
   try {
-    await fbSet('vencimentos/'+id, { id:id, nome:nome, valor:valor, dia:dia, tipo:tipo, aviso:aviso, encerra:encerra });
+    await fbSet('vencimentos/'+id, obj);
     closeModal('modal-vencimento');
     showToast(editingVencId?'Vencimento atualizado!':'Vencimento adicionado!');
     editingVencId = null;
@@ -820,6 +857,71 @@ async function salvarVencimento() {
 async function delVencimento(id) {
   await fbRemove('vencimentos/'+id);
   showToast('Vencimento removido.');
+}
+
+// ------------------------------------------------------------
+// PAGAR VENCIMENTO → gera saída automática + avança parcela
+// ------------------------------------------------------------
+async function marcarPago(id) {
+  var v = VENCIMENTOS_FB.find(function(x){ return x.id===id; });
+  if (!v) return;
+  var mesAt = getMesAtual();
+  var mesKey = mesAt.m;
+  if (vencPago(v, mesKey)) { showToast('Este vencimento já está pago neste mês.','err'); return; }
+  try {
+    // Data do lançamento = dia do vencimento dentro do mês corrente do app
+    var diaPad = String(v.dia).padStart(2, '0');
+    var dataLanc = mesKey + '-' + diaPad;
+    // 1) Cria a saída automática (categoria Contas)
+    var lancId = await fbPush('lancamentos', {
+      desc: v.nome,
+      valor: v.valor,
+      data: dataLanc,
+      categoria: 'Contas',
+      conta: 'Barbearia',
+      pagamento: 'Pix',
+      obs: 'Pagamento de vencimento',
+      vencId: id
+    });
+    // 2) Monta atualização do vencimento (registro de pagamento + parcela)
+    var upd = Object.assign({}, v);
+    upd.pagamentos = Object.assign({}, v.pagamentos || {});
+    var reg = { lancId: lancId, data: dataLanc };
+    // 3) Avança parcela, se houver
+    if (v.parcelaTotal) {
+      var atual = v.parcelaAtual || 1;
+      if (atual >= v.parcelaTotal) {
+        upd.encerra = true;      // pagou a última parcela
+        reg.encerrou = true;
+      } else {
+        upd.parcelaAtual = atual + 1;
+        reg.avancou = true;
+      }
+    }
+    upd.pagamentos[mesKey] = reg;
+    await fbSet('vencimentos/'+id, upd);
+    showToast('✓ ' + v.nome + ' pago — lançado nas saídas de ' + mesAt.label);
+  } catch(e) { showToast('Erro ao registrar pagamento.','err'); }
+}
+
+async function desfazerPagamento(id) {
+  var v = VENCIMENTOS_FB.find(function(x){ return x.id===id; });
+  if (!v) return;
+  var mesKey = getMesAtual().m;
+  var reg = v.pagamentos && v.pagamentos[mesKey];
+  if (!reg) { showToast('Nenhum pagamento neste mês para desfazer.','err'); return; }
+  try {
+    // 1) Remove a saída automática vinculada
+    if (reg.lancId) await fbRemove('lancamentos/'+reg.lancId);
+    // 2) Reverte parcela/encerramento se este pagamento os causou
+    var upd = Object.assign({}, v);
+    upd.pagamentos = Object.assign({}, v.pagamentos || {});
+    if (reg.avancou && upd.parcelaAtual) upd.parcelaAtual = Math.max(1, upd.parcelaAtual - 1);
+    if (reg.encerrou) upd.encerra = false;
+    delete upd.pagamentos[mesKey];
+    await fbSet('vencimentos/'+id, upd);
+    showToast('Pagamento desfeito — saída removida.');
+  } catch(e) { showToast('Erro ao desfazer.','err'); }
 }
 
 // ============================================================
@@ -1048,6 +1150,120 @@ function initCatGrid() {
   grid.innerHTML = CATS.map(function(c,i){
     return '<button class="cat-btn '+(i===0?'active':'')+'" onclick="selCat('+i+')"><i class="ti '+c.icon+'" style="color:'+c.cor+'"></i>'+c.nome+'</button>';
   }).join('');
+}
+
+// ============================================================
+// EXPORTAR RELATÓRIO DO MÊS (PDF via impressão)
+// ============================================================
+function exportarFechamento() {
+  var isCurrent = histIdx === -1;
+  var mesAt = getMesAtual();
+  var dados = isCurrent ? (HIST.length ? HIST[HIST.length-1] : null) : HIST[histIdx];
+
+  // Mês de referência para filtrar saídas/vencimentos
+  var mesKey = isCurrent ? mesAt.m : (dados ? dados.m : mesAt.m);
+  var mesLabel, ano;
+  if (dados) { mesLabel = dados.label; ano = dados.m.slice(0,4); }
+  else { mesLabel = mesAt.label; ano = String(mesAt.ano); }
+
+  // Comparativo com mês anterior
+  var idxRef = dados ? HIST.findIndex(function(h){ return h.m===dados.m; }) : -1;
+  var prev = (idxRef > 0) ? HIST[idxRef-1] : null;
+
+  // Saídas do mês
+  var lancs = lancamentos.filter(function(l){ return l.data && l.data.indexOf(mesKey)===0; });
+  var totalSaidas = lancs.reduce(function(s,l){ return s+l.valor; }, 0);
+  var porCat = {};
+  lancs.forEach(function(l){ var k=l.categoria||'Outro'; porCat[k]=(porCat[k]||0)+l.valor; });
+  var catRows = Object.entries(porCat).sort(function(a,b){ return b[1]-a[1]; }).map(function(e){
+    var pct = totalSaidas>0?Math.round((e[1]/totalSaidas)*100):0;
+    return '<tr><td>'+e[0]+'</td><td class="r">'+brl(e[1])+'</td><td class="r">'+pct+'%</td></tr>';
+  }).join('');
+
+  // Vencimentos
+  var totalVenc = VENCIMENTOS_FB.reduce(function(s,v){ return s+v.valor; }, 0);
+  var vencRows = VENCIMENTOS_FB.slice().sort(function(a,b){ return a.dia-b.dia; }).map(function(v){
+    var pago = vencPago(v, mesKey);
+    return '<tr><td>'+v.nome+'</td><td>'+tipoLabel(v)+'</td><td class="r">'+brl(v.valor)+'</td><td class="r">'+(pago?'✓ pago':'—')+'</td></tr>';
+  }).join('');
+
+  var fat = dados ? dados.fat : 0;
+  var atend = dados ? dados.atend : 0;
+  var ticket = dados ? dados.ticket : 0;
+  var resultado = fat - totalSaidas;
+
+  var comparFat = '';
+  if (prev) {
+    var dif = fat - prev.fat;
+    var difPct = Math.round((dif/prev.fat)*100);
+    comparFat = '<span style="color:'+(dif>=0?'#2e7d4f':'#c0392b')+'">'+(dif>=0?'▲':'▼')+' '+Math.abs(difPct)+'% vs. '+prev.label+' ('+brl(prev.fat)+')</span>';
+  }
+
+  var pctRes = reserva.metaTotal ? Math.round((reserva.valor/reserva.metaTotal)*100) : 0;
+  var hojeStr = new Date().toLocaleDateString('pt-BR');
+
+  var doc = '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">' +
+    '<title>Fechamento '+mesLabel+'/'+ano+' — Heloísa Mazzi</title>' +
+    '<style>' +
+    '*{margin:0;padding:0;box-sizing:border-box}' +
+    'body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1a1a;padding:32px;max-width:800px;margin:0 auto;font-size:13px}' +
+    'h1{font-size:22px;color:#1e3a5f;margin-bottom:2px}' +
+    '.sub{color:#666;font-size:12px;margin-bottom:20px}' +
+    '.mes{display:inline-block;background:#1e3a5f;color:#fff;padding:4px 14px;border-radius:6px;font-weight:600;font-size:14px;margin-bottom:20px}' +
+    '.kpis{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap}' +
+    '.kpi{flex:1;min-width:130px;border:1px solid #e0e0e0;border-radius:8px;padding:12px 14px}' +
+    '.kpi .lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px}' +
+    '.kpi .val{font-size:20px;font-weight:700;color:#1e3a5f;margin-top:4px}' +
+    '.kpi .cmp{font-size:11px;margin-top:3px}' +
+    'h2{font-size:14px;color:#1e3a5f;margin:22px 0 8px;padding-bottom:5px;border-bottom:2px solid #1e3a5f}' +
+    'table{width:100%;border-collapse:collapse;font-size:12px}' +
+    'th{text-align:left;color:#888;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:6px 8px;border-bottom:1px solid #ddd}' +
+    'td{padding:6px 8px;border-bottom:1px solid #f0f0f0}' +
+    'td.r,th.r{text-align:right}' +
+    '.tot{font-weight:700;color:#1e3a5f}' +
+    '.result{background:#f5f8fc;border:1px solid #d5e2f0;border-radius:8px;padding:14px 16px;margin-top:10px;display:flex;justify-content:space-between;align-items:center}' +
+    '.result .big{font-size:22px;font-weight:700}' +
+    '.foot{margin-top:32px;padding-top:14px;border-top:1px solid #eee;color:#aaa;font-size:10px;text-align:center}' +
+    '@media print{body{padding:0}.noprint{display:none}}' +
+    '.noprint{margin-bottom:20px;text-align:center}' +
+    '.noprint button{background:#1e3a5f;color:#fff;border:0;padding:10px 24px;border-radius:8px;font-size:14px;cursor:pointer}' +
+    '</style></head><body>' +
+    '<div class="noprint"><button onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button></div>' +
+    '<h1>✂️ Heloísa Mazzi Barbearia</h1>' +
+    '<div class="sub">Relatório de fechamento mensal · gerado em '+hojeStr+'</div>' +
+    '<div class="mes">'+mesLabel+' / '+ano+'</div>' +
+    '<div class="kpis">' +
+      '<div class="kpi"><div class="lbl">Faturamento</div><div class="val">'+brl(fat)+'</div><div class="cmp">'+comparFat+'</div></div>' +
+      '<div class="kpi"><div class="lbl">Atendimentos</div><div class="val">'+atend+'</div></div>' +
+      '<div class="kpi"><div class="lbl">Ticket médio</div><div class="val">'+brl(ticket)+'</div></div>' +
+    '</div>' +
+    '<h2>Saídas por categoria</h2>' +
+    (catRows ? '<table><thead><tr><th>Categoria</th><th class="r">Valor</th><th class="r">%</th></tr></thead><tbody>'+catRows+
+      '<tr class="tot"><td>Total de saídas</td><td class="r">'+brl(totalSaidas)+'</td><td class="r">100%</td></tr></tbody></table>'
+      : '<p style="color:#999">Nenhuma saída lançada neste mês.</p>') +
+    '<h2>Vencimentos / Contas do mês</h2>' +
+    (vencRows ? '<table><thead><tr><th>Conta</th><th>Tipo</th><th class="r">Valor</th><th class="r">Status</th></tr></thead><tbody>'+vencRows+
+      '<tr class="tot"><td colspan="2">Total comprometido</td><td class="r">'+brl(totalVenc)+'</td><td></td></tr></tbody></table>'
+      : '<p style="color:#999">Nenhum vencimento cadastrado.</p>') +
+    '<h2>Reserva de emergência</h2>' +
+    '<table><tbody>' +
+      '<tr><td>Saldo atual</td><td class="r tot">'+brl(reserva.valor)+'</td></tr>' +
+      '<tr><td>Meta total</td><td class="r">'+brl(reserva.metaTotal)+'</td></tr>' +
+      '<tr><td>Progresso</td><td class="r">'+pctRes+'%</td></tr>' +
+    '</tbody></table>' +
+    '<h2>Resultado do mês</h2>' +
+    '<div class="result"><div><div style="font-size:11px;color:#888;text-transform:uppercase">Faturamento − Saídas</div>' +
+      '<div style="font-size:11px;color:#aaa;margin-top:2px">'+brl(fat)+' − '+brl(totalSaidas)+'</div></div>' +
+      '<div class="big" style="color:'+(resultado>=0?'#2e7d4f':'#c0392b')+'">'+brl(resultado)+'</div></div>' +
+    '<div class="foot">Heloísa Mazzi Barbearia · Rua Ambrósio dos Santos, 749 · Gerado pelo app de gestão financeira</div>' +
+    '</body></html>';
+
+  var w = window.open('', '_blank');
+  if (!w) { showToast('Libere pop-ups para exportar o relatório.','err'); return; }
+  w.document.open();
+  w.document.write(doc);
+  w.document.close();
+  showToast('Relatório de ' + mesLabel + ' gerado!');
 }
 
 // ============================================================

@@ -166,7 +166,19 @@
       </div>
       <div class="form-group">
         <label class="form-label">Tipo</label>
-        <input class="form-input" type="text" id="v-tipo" placeholder="Ex: Fixo, Parcela 2/12...">
+        <input class="form-input" type="text" id="v-tipo" placeholder="Ex: Fixo, Assinatura...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Parcelamento (opcional)</label>
+        <div class="form-row" style="margin:0">
+          <div class="form-group" style="margin:0">
+            <input class="form-input" type="number" id="v-parc-atual" min="1" inputmode="numeric" placeholder="Parcela atual">
+          </div>
+          <div class="form-group" style="margin:0">
+            <input class="form-input" type="number" id="v-parc-total" min="1" inputmode="numeric" placeholder="Total de parcelas">
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:5px">Preencha para virar "Parcela X/Y" e avançar sozinho a cada pagamento. Deixe vazio para conta fixa.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Avisar quantos dias antes</label>
